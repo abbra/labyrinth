@@ -133,7 +133,17 @@ struct SolveResponse {
     reached_cells: usize,
     micros: u128,
     /// Heap use of the solve, from the counting allocator.
+    #[serde(with = "UsageDef")]
     heap: alloc::Usage,
+}
+
+/// Serde mirror of `alloc::Usage`, which stays serde-free so the library bench can share it.
+#[derive(Serialize)]
+#[serde(remote = "alloc::Usage")]
+struct UsageDef {
+    allocs: u64,
+    bytes: u64,
+    peak: u64,
 }
 
 async fn solve(

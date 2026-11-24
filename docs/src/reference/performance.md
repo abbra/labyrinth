@@ -4,12 +4,24 @@ All values come from one machine with 24 cores and release builds.
 
 ## Library: square mazes
 
-These mazes come from a square backtracker generator.
+These mazes come from a square backtracker generator. To measure one maze,
+run the `bench` example. It solves the maze one time and prints the time
+and the heap use:
 
-| Side | Loops | Time |
-|------|-------|------|
-| 321 | 4,893 | 0.280 s |
-| 1001 | 67,073 | 2.518 s |
+```bash
+cargo run -q --release --example bench < maze.txt
+```
+
+The example uses the same counting allocator as the server. The library
+itself has no dependencies and no allocator.
+
+| Side | Tokens | Loops | Time | Allocations | Peak heap | Peak per token |
+|------|--------|-------|------|-------------|-----------|----------------|
+| 21 | 441 | 77 | 0.002 s | 99 | 0.1 MiB | 216 B |
+| 81 | 6,561 | 657 | 0.021 s | 108 | 1.3 MiB | 210 B |
+| 321 | 103,041 | 4,893 | 0.278 s | 108 | 21.0 MiB | 213 B |
+| 501 | 251,001 | 17,625 | 0.708 s | 108 | 57.8 MiB | 241 B |
+| 1001 | 1,002,001 | 67,073 | 2.818 s | 108 | 221.4 MiB | 231 B |
 
 ## Server: 321×321 boards
 

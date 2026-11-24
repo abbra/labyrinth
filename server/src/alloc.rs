@@ -4,8 +4,6 @@ use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
 
-use serde::Serialize;
-
 /// The system allocator plus process-wide counters.
 struct Counting;
 
@@ -58,7 +56,7 @@ unsafe impl GlobalAlloc for Counting {
 }
 
 /// Heap use while one closure ran.
-#[derive(Clone, Copy, Debug, Serialize)]
+#[derive(Clone, Copy, Debug)]
 pub struct Usage {
     /// Calls to `alloc`.
     pub allocs: u64,
