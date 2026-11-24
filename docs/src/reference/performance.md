@@ -42,25 +42,26 @@ the counting allocator. The initial baseline was 158.17 ms; the current
 three-run median is 5.514 ms, a 28.7× speed-up. Both report 1,023 loops and
 1,048,571 token passes.
 
-### Model versus queue-based BFS
+### Comparing solve algorithms
 
-`cargo run --release --example bfs_compare` times `Model::solve` against a
-single-goal BFS using `std::collections::VecDeque`, on the same open 512×512
-maze. `Model::solve` evaluates the existing local model rules over staged
-frontiers; `Model::trace` remains unchanged. The benchmark alternates solver
-order across nine runs and reports medians; path validation is outside the
-timed region. Both produce a valid shortest path of 1,023 cells.
+`cargo run --release --example bfs_compare` compares `Model::solve` with
+queue-based BFS, bidirectional BFS, and A* on the same open 512×512 single-goal
+maze. A* uses the grid's Manhattan-distance heuristic. Solver order rotates
+across nine runs; reported values are medians. The benchmark validates every
+route's endpoints, traversable cells, edges, and shortest length outside the
+timed region.
 
 | Solver | Median solve time (ms) |
 |--------|------------------------|
-| `Model::solve` | 2.885 |
-| Queue-based BFS | 3.431 |
+| `Model::solve` | 3.534 |
+| Queue-based BFS | 4.165 |
+| Bidirectional BFS | 4.429 |
+| A* | 12.362 |
 
-On this workload, `Model::solve` took 0.84× as long as the conventional
-queue-based BFS. This is a direct measurement of the public solve calls, not
-the allocation-instrumented `Model::trace` timings above; timings vary with
-system load.
-
+On this workload, `Model::solve` took 0.85× as long as queue BFS, 0.80× as
+long as bidirectional BFS, and 0.29× as long as A*. These measurements cover
+one open-grid workload only; they do not establish performance on obstacle
+mazes. The timings vary with system load.
 
 ## Server: 321×321 boards
 
