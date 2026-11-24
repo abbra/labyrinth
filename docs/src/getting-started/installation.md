@@ -37,6 +37,16 @@ wasm-bindgen --target web --out-dir wasm/pkg target/wasm32-unknown-unknown/relea
 Serve the repository root over HTTP and open `/wasm-demo/`. Maze generation and
 solving then run in the browser; heap allocation statistics are not available.
 
+To create a copyable static distribution, run:
+
+```bash
+scripts/local-ci.sh wasm-dist
+```
+
+The job writes the browser assets to `target/wasm-dist/`. Copy that directory's
+contents to the web server's document root, then open `/wasm-demo/`. The
+distribution does not need the Rust server.
+
 ## Use the library in your crate
 
 Add a path dependency to your `Cargo.toml`:

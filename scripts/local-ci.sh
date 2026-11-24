@@ -36,10 +36,10 @@ else
 fi
 export RUSTDOCFLAGS="-D warnings"
 
-ALL_JOBS=(build fmt clippy test doc examples wasm)
+ALL_JOBS=(build fmt clippy test doc examples wasm wasm-dist)
 declare -A JOB_STATUS=() JOB_SECS=()
 FAILED_JOBS=()
-declare -A JOB_DEPS=( [clippy]=build [test]=build [doc]=test [examples]=build [wasm]=build )
+declare -A JOB_DEPS=( [clippy]=build [test]=build [doc]=test [examples]=build [wasm]=build [wasm-dist]=wasm )
 step() { printf '\n%s▶ %s%s\n' "$BOLD$BLUE" "$*" "$NC"; }
 ok() { printf '%s✔ %s%s\n' "$GREEN" "$*" "$NC"; }
 warn() { printf '%s! %s%s\n' "$YELLOW" "$*" "$NC"; }
@@ -92,8 +92,22 @@ job_examples() {
         printf '%s' "$maze" | cargo run -q --release --example bench >/dev/null
 }
 job_wasm() {
+    local target_dir="${CARGO_TARGET_DIR:-target}"
     cargo build --release -p labyrinth-wasm --target wasm32-unknown-unknown &&
-        wasm-bindgen --target web --out-dir wasm/pkg target/wasm32-unknown-unknown/release/labyrinth_wasm.wasm
+        wasm-bindgen --target web --out-dir wasm/pkg "$target_dir/wasm32-unknown-unknown/release/labyrinth_wasm.wasm"
+}
+job_wasm_dist() {
+    local dist_dir=target/wasm-dist
+    rm -rf "$dist_dir"
+    mkdir -p "$dist_dir/server/src" "$dist_dir/wasm/pkg" "$dist_dir/wasm-demo"
+    cp server/src/index.html "$dist_dir/server/src/"
+    cp wasm-demo/index.html "$dist_dir/wasm-demo/"
+    cp -a wasm/pkg/. "$dist_dir/wasm/pkg/"
+    test -s "$dist_dir/server/src/index.html" &&
+        test -s "$dist_dir/wasm-demo/index.html" &&
+        test -s "$dist_dir/wasm/pkg/labyrinth_wasm.js" &&
+        test -s "$dist_dir/wasm/pkg/labyrinth_wasm_bg.wasm" &&
+        printf 'Copyable browser-only distribution: %s\n' "$dist_dir"
 }
 
 dispatch_job() {
@@ -105,7 +119,7 @@ dispatch_job() {
         doc) run_job doc job_doc ;;
         examples) run_job examples job_examples ;;
         wasm) run_job wasm job_wasm ;;
-        *) echo "Unknown job: $1" >&2; echo "Run '$0 --list' for available jobs." >&2; exit 1 ;;
+        wasm-dist) run_job wasm-dist job_wasm_dist ;;
     esac
 }
 
