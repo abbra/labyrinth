@@ -14,6 +14,8 @@ use crate::maze::{Cell, MAX_DEGREE as K, Maze};
 
 const MODEL_D: usize = 4 + 2 * K;
 type State = u8;
+// Stage one wave without letting its rule outputs affect other candidates.
+const PENDING: State = 1 << 7;
 
 /// The fixed-rule maze-solving model.
 ///
@@ -58,7 +60,31 @@ impl Model {
     ///
     /// Panics if the model fails to terminate, which would indicate a bug in the solver rules.
     pub fn solve(&self, maze: &Maze) -> Option<Vec<usize>> {
-        self.trace(maze).path
+        let start = maze.start();
+        let mut x = embed(maze);
+        let mut frontier = Vec::with_capacity(maze.goals().len());
+        for &goal in maze.goals() {
+            x[goal] = self.block(goal, &x, maze);
+            frontier.push(goal);
+        }
+        let mut candidates = Vec::new();
+        while x[start] == 0 && !frontier.is_empty() {
+            candidates.clear();
+            for &i in &frontier {
+                for &j in maze.neighbours(i) {
+                    if x[j] == 0 && maze.cells()[j] != Cell::Wall {
+                        x[j] = self.block(j, &x, maze) | PENDING;
+                        candidates.push(j);
+                    }
+                }
+            }
+            frontier.clear();
+            for j in candidates.drain(..) {
+                x[j] &= !PENDING;
+                frontier.push(j);
+            }
+        }
+        read_path(maze, &x)
     }
 
     /// Like [`Model::solve`], but also reports how the model got there.
@@ -123,7 +149,7 @@ impl Model {
             return x[i];
         }
         for (slot, &neighbour) in maze.neighbours(i).iter().enumerate() {
-            if x[neighbour] != 0 {
+            if x[neighbour] != 0 && x[neighbour] & PENDING == 0 {
                 return slot as State + 1;
             }
         }

@@ -236,3 +236,26 @@ fn visits_every_goal_and_fails_if_any_goal_is_unreachable() {
     let maze: Maze = "S.G#G".parse().expect("multiple goals are valid");
     assert_eq!(Model::new().solve(&maze), None);
 }
+
+#[test]
+fn solve_rule_frontier_matches_trace_for_single_and_multiple_goals() {
+    let model = Model::new();
+    let single: Maze = "S..\n...\n..G".parse().expect("valid maze");
+    assert_eq!(model.solve(&single), model.trace(&single).path);
+
+    let multiple = Maze::new(
+        vec![
+            Cell::Goal,
+            Cell::Open,
+            Cell::Open,
+            Cell::Open,
+            Cell::Start,
+            Cell::Goal,
+        ],
+        [(0, 1), (1, 2), (2, 3), (3, 4), (4, 5)],
+    )
+    .expect("valid maze");
+    let path = Some(vec![4, 5, 4, 3, 2, 1, 0]);
+    assert_eq!(model.solve(&multiple), path);
+    assert_eq!(model.solve(&multiple), model.trace(&multiple).path);
+}

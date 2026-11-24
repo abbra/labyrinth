@@ -46,18 +46,20 @@ three-run median is 5.514 ms, a 28.7× speed-up. Both report 1,023 loops and
 
 `cargo run --release --example bfs_compare` times `Model::solve` against a
 single-goal BFS using `std::collections::VecDeque`, on the same open 512×512
-maze. It alternates solver order across nine runs and reports medians; path
-validation is outside the timed region. Both produce a valid shortest path of
-1,023 cells.
+maze. `Model::solve` evaluates the existing local model rules over staged
+frontiers; `Model::trace` remains unchanged. The benchmark alternates solver
+order across nine runs and reports medians; path validation is outside the
+timed region. Both produce a valid shortest path of 1,023 cells.
 
 | Solver | Median solve time (ms) |
 |--------|------------------------|
-| `Model::solve` | 6.695 |
-| Queue-based BFS | 3.747 |
+| `Model::solve` | 2.885 |
+| Queue-based BFS | 3.431 |
 
-On this workload, the model solver took 1.79× as long as the conventional
+On this workload, `Model::solve` took 0.84× as long as the conventional
 queue-based BFS. This is a direct measurement of the public solve calls, not
-the allocation-instrumented `Model::trace` timings above.
+the allocation-instrumented `Model::trace` timings above; timings vary with
+system load.
 
 
 ## Server: 321×321 boards
