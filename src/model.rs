@@ -61,8 +61,8 @@ impl Model {
     /// Panics if the model fails to terminate, which would indicate a bug in the solver rules.
     pub fn solve(&self, maze: &Maze) -> Option<Vec<usize>> {
         if maze.goals().len() == 1 {
-            if let Some(side) = maze.open_square_side() {
-                return Some(open_square_path(maze, side));
+            if let Some((side, preference)) = maze.open_square() {
+                return Some(open_square_path(maze, side, preference));
             }
         }
         let start = maze.start();
@@ -166,7 +166,7 @@ impl Model {
     }
 }
 
-fn open_square_path(maze: &Maze, side: usize) -> Vec<usize> {
+fn open_square_path(maze: &Maze, side: usize, preferences: &[u8]) -> Vec<usize> {
     let goal = maze.goal();
     let (goal_row, goal_col) = (goal / side, goal % side);
     let mut cell = maze.start();
@@ -175,35 +175,28 @@ fn open_square_path(maze: &Maze, side: usize) -> Vec<usize> {
     let mut path = Vec::with_capacity(distance + 1);
     path.push(cell);
     while cell != goal {
-        let vertical = if row < goal_row {
-            cell + side
-        } else if row > goal_row {
-            cell - side
+        let vertical = row != goal_row;
+        let horizontal = col != goal_col;
+        let vertical_first = if vertical && horizontal {
+            let bit = usize::from(row < goal_row) * 2 + usize::from(col < goal_col);
+            preferences[cell] & (1u8 << bit) != 0
         } else {
-            usize::MAX
+            vertical
         };
-        let horizontal = if col < goal_col {
-            cell + 1
-        } else if col > goal_col {
-            cell - 1
-        } else {
-            usize::MAX
-        };
-        cell = *maze
-            .neighbours(cell)
-            .iter()
-            .find(|&&next| next == vertical || next == horizontal)
-            .expect("an open square has a shortest-path neighbour");
-        if cell == vertical {
+        if vertical_first {
             if row < goal_row {
                 row += 1;
+                cell += side;
             } else {
                 row -= 1;
+                cell -= side;
             }
         } else if col < goal_col {
             col += 1;
+            cell += 1;
         } else {
             col -= 1;
+            cell -= 1;
         }
         path.push(cell);
     }

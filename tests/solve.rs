@@ -243,6 +243,33 @@ fn solve_rule_frontier_matches_trace_for_single_and_multiple_goals() {
     let single: Maze = "S..\n...\n..G".parse().expect("valid maze");
     assert_eq!(model.solve(&single), model.trace(&single).path);
 
+    let edges = [
+        (0, 1),
+        (1, 2),
+        (3, 4),
+        (4, 5),
+        (6, 7),
+        (7, 8),
+        (0, 3),
+        (1, 4),
+        (2, 5),
+        (3, 6),
+        (4, 7),
+        (5, 8),
+    ];
+    for start in 0..9 {
+        for goal in 0..9 {
+            if start == goal {
+                continue;
+            }
+            let mut cells = vec![Cell::Open; 9];
+            cells[start] = Cell::Start;
+            cells[goal] = Cell::Goal;
+            let maze = Maze::new(cells, edges).expect("valid open square");
+            assert_eq!(model.solve(&maze), model.trace(&maze).path);
+        }
+    }
+
     let incomplete_square = Maze::new(
         vec![
             Cell::Start,

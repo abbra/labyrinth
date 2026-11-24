@@ -27,7 +27,7 @@ pub struct Maze {
     /// Neighbours of cell `i` are `targets[offsets[i]..offsets[i + 1]]`.
     offsets: Vec<usize>,
     targets: Vec<usize>,
-    open_square_side: Option<usize>,
+    open_square: Option<(usize, Vec<u8>)>,
     start: usize,
     goals: Vec<usize>,
 }
@@ -90,12 +90,12 @@ impl Maze {
         if goals.is_empty() {
             return Err(MazeError::Goal);
         }
-        let open_square_side = square_side(&cells, &offsets, &targets);
+        let open_square = square_info(&cells, &offsets, &targets);
         Ok(Self {
             cells,
             offsets,
             targets,
-            open_square_side,
+            open_square,
             start,
             goals,
         })
@@ -124,8 +124,10 @@ impl Maze {
     pub fn goals(&self) -> &[usize] {
         &self.goals
     }
-    pub(crate) fn open_square_side(&self) -> Option<usize> {
-        self.open_square_side
+    pub(crate) fn open_square(&self) -> Option<(usize, &[u8])> {
+        self.open_square
+            .as_ref()
+            .map(|(side, preference)| (*side, preference.as_slice()))
     }
 
     /// Id of the first goal cell.
@@ -136,26 +138,48 @@ impl Maze {
     }
 }
 
-fn square_side(cells: &[Cell], offsets: &[usize], targets: &[usize]) -> Option<usize> {
+fn square_info(cells: &[Cell], offsets: &[usize], targets: &[usize]) -> Option<(usize, Vec<u8>)> {
     let side = (cells.len() as f64).sqrt() as usize;
     if side.checked_mul(side) != Some(cells.len()) || cells.contains(&Cell::Wall) {
         return None;
     }
+    let mut preferences = Vec::with_capacity(cells.len());
     for i in 0..cells.len() {
         let (row, col) = (i / side, i % side);
         let degree = usize::from(row > 0)
             + usize::from(row + 1 < side)
             + usize::from(col > 0)
             + usize::from(col + 1 < side);
-        if offsets[i + 1] - offsets[i] != degree
-            || targets[offsets[i]..offsets[i + 1]]
-                .iter()
-                .any(|&j| row.abs_diff(j / side) + col.abs_diff(j % side) != 1)
-        {
+        let neighbours = &targets[offsets[i]..offsets[i + 1]];
+        if neighbours.len() != degree {
             return None;
         }
+        let mut slots = [u8::MAX; 4];
+        for (slot, &j) in neighbours.iter().enumerate() {
+            let (next_row, next_col) = (j / side, j % side);
+            if row.abs_diff(next_row) + col.abs_diff(next_col) != 1 {
+                return None;
+            }
+            let direction = if next_row < row {
+                0
+            } else if next_row > row {
+                2
+            } else if next_col < col {
+                3
+            } else {
+                1
+            };
+            slots[direction] = slot as u8;
+        }
+        let mut preference = 0;
+        for (bit, vertical, horizontal) in [(0, 0, 3), (1, 0, 1), (2, 2, 3), (3, 2, 1)] {
+            if slots[vertical] < slots[horizontal] {
+                preference |= 1 << bit;
+            }
+        }
+        preferences.push(preference);
     }
-    Some(side)
+    Some((side, preferences))
 }
 
 /// Why a maze was rejected.
