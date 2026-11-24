@@ -92,10 +92,13 @@ impl Model {
             for (i, token) in updates.drain(..) {
                 x[i] = token;
                 reached_at[i].get_or_insert(loops);
-                for j in std::iter::once(i).chain(maze.neighbours(i).iter().copied()) {
+                for &j in maze.neighbours(i) {
                     if !std::mem::replace(&mut marked[j], true) {
                         dirty.push(j);
                     }
+                }
+                if !std::mem::replace(&mut marked[i], true) {
+                    dirty.push(i);
                 }
             }
             for &i in &dirty {
