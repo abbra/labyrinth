@@ -3,6 +3,7 @@
 //! `GET /` serves the single-page UI, `POST /api/generate` builds a maze and
 //! `POST /api/solve` runs the model and returns the path plus execution statistics.
 
+mod board;
 mod generate;
 
 use std::sync::Arc;
@@ -13,8 +14,9 @@ use axum::extract::{Json, State};
 use axum::http::StatusCode;
 use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{get, post};
+use board::{Board, Shape};
 use generate::Algorithm;
-use labyrinth::{Maze, Model};
+use labyrinth::Model;
 use serde::{Deserialize, Serialize};
 
 /// Smallest side the carving generators can fit separate start and goal rooms into.
@@ -70,6 +72,7 @@ async fn model_info(State(model): State<Arc<Model>>) -> Json<ModelInfo> {
 
 #[derive(Deserialize)]
 struct GenerateRequest {
+    shape: Shape,
     algorithm: Algorithm,
     width: usize,
     height: usize,
@@ -78,30 +81,50 @@ struct GenerateRequest {
 
 #[derive(Serialize)]
 struct GenerateResponse {
-    rows: Vec<String>,
+    /// One of `#.SG` per cell; square boards are row-major.
+    cells: String,
+    /// Flat `[x0, y0, x1, y1, …]` outline per cell, omitted for square boards, whose
+    /// geometry the client derives from the width.
+    polygons: Option<Vec<Vec<f32>>>,
 }
 
 async fn generate(Json(req): Json<GenerateRequest>) -> Result<Json<GenerateResponse>, BadRequest> {
     check_side("width", req.width)?;
     check_side("height", req.height)?;
-    let rows = generate::generate(req.algorithm, req.height, req.width, req.seed);
-    Ok(Json(GenerateResponse { rows }))
+    let board = Board::new(req.shape, req.width, req.height);
+    let cells = generate::generate(&board, req.algorithm, req.seed);
+    let polygons = (board.shape != Shape::Square).then(|| {
+        // Millipixel precision keeps the JSON short.
+        let round = |v: f64| ((v * 1000.0).round() / 1000.0) as f32;
+        board
+            .polygons
+            .iter()
+            .map(|poly| poly.iter().flat_map(|p| p.map(round)).collect())
+            .collect()
+    });
+    Ok(Json(GenerateResponse {
+        cells: String::from_utf8(cells).expect("cells are ASCII"),
+        polygons,
+    }))
 }
 
 #[derive(Deserialize)]
 struct SolveRequest {
-    rows: Vec<String>,
+    shape: Shape,
+    width: usize,
+    height: usize,
+    cells: String,
 }
 
 #[derive(Serialize)]
 struct SolveResponse {
-    /// `[row, col]` cells from start to goal, or `None` when the goal is unreachable.
-    path: Option<Vec<[usize; 2]>>,
-    /// Row-major loop index at which the goal flood reached each cell.
+    /// Cell ids from start to goal, or `None` when the goal is unreachable.
+    path: Option<Vec<usize>>,
+    /// Loop index at which the goal flood reached each cell.
     reached_at: Vec<Option<usize>>,
     /// Transformer block applications until the start was reached or the flood stopped.
     loops: usize,
-    /// Tokens in the padded grid: every cell plus the wall border.
+    /// Tokens in the sequence: one per cell.
     tokens: usize,
     /// Token evaluations actually run, summed over loops.
     token_passes: usize,
@@ -114,14 +137,14 @@ async fn solve(
     State(model): State<Arc<Model>>,
     Json(req): Json<SolveRequest>,
 ) -> Result<Json<SolveResponse>, BadRequest> {
-    let maze: Maze = req
-        .rows
-        .join("\n")
-        .parse()
+    check_side("width", req.width)?;
+    check_side("height", req.height)?;
+    let board = Board::new(req.shape, req.width, req.height);
+    let maze = board
+        .maze(req.cells.as_bytes())
         .map_err(|e| BadRequest(format!("invalid maze: {e}")))?;
-    check_side("width", maze.width())?;
-    check_side("height", maze.height())?;
-    let tokens = (maze.width() + 2) * (maze.height() + 2);
+    let tokens = board.len();
+    let open_cells = req.cells.bytes().filter(|&b| b != b'#').count();
     // The model loop is CPU-bound and multi-threaded; keep it off the async workers.
     let (trace, micros) = tokio::task::spawn_blocking(move || {
         let started = Instant::now();
@@ -130,16 +153,8 @@ async fn solve(
     })
     .await
     .expect("solver panicked");
-    let open_cells = req
-        .rows
-        .iter()
-        .flat_map(|r| r.bytes())
-        .filter(|&b| b != b'#')
-        .count();
     Ok(Json(SolveResponse {
-        path: trace
-            .path
-            .map(|p| p.iter().map(|p| [p.row, p.col]).collect()),
+        path: trace.path,
         reached_cells: trace.reached_at.iter().flatten().count(),
         reached_at: trace.reached_at,
         token_passes: trace.token_passes,

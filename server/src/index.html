@@ -138,6 +138,14 @@
   <section>
     <div class="card">
       <h2>Generate</h2>
+      <label>Shape
+        <select id="shape">
+          <option value="square">Square</option>
+          <option value="hex">Hexagon</option>
+          <option value="triangle">Triangle</option>
+          <option value="penrose">Penrose rhombs · aperiodic</option>
+        </select>
+      </label>
       <label>Algorithm
         <select id="algorithm">
           <option value="backtracker">Recursive backtracker · long corridors</option>
@@ -228,7 +236,7 @@
 <script>
 const $ = id => document.getElementById(id);
 const canvas = $("canvas"), ctx = canvas.getContext("2d");
-let grid = [], solution = null, frame = 0, params = 0;
+let cells = [], solution = null, frame = 0, params = 0;
 
 // ---- theme ----
 const themeSel = $("theme");
@@ -252,63 +260,120 @@ async function api(path, body) {
   return res.json();
 }
 
+// ---- board ----
+// cells: one of "#.SG" per cell. Square boards are row-major W×H with implicit geometry;
+// other shapes come with flat [x0, y0, x1, y1, …] polygons in board units.
+let shape = "square", W = 0, H = 0, polys = null, centres = [], bounds = [0, 0, 1, 1], unit = 1;
+
+function load(res) {
+  cells = [...res.cells]; polys = res.polygons; boards++;
+  if (polys) {
+    centres = polys.map(p => {
+      let x = 0, y = 0;
+      for (let k = 0; k < p.length; k += 2) { x += p[k]; y += p[k + 1]; }
+      return [2 * x / p.length, 2 * y / p.length];
+    });
+    bounds = [Infinity, Infinity, -Infinity, -Infinity];
+    for (const p of polys) for (let k = 0; k < p.length; k += 2) {
+      bounds[0] = Math.min(bounds[0], p[k]); bounds[1] = Math.min(bounds[1], p[k + 1]);
+      bounds[2] = Math.max(bounds[2], p[k]); bounds[3] = Math.max(bounds[3], p[k + 1]);
+    }
+  } else {
+    centres = cells.map((_, i) => [i % W + 0.5, Math.floor(i / W) + 0.5]);
+    bounds = [0, 0, W, H];
+  }
+  // Typical cell diameter, for marker and path sizes.
+  unit = Math.sqrt((bounds[2] - bounds[0]) * (bounds[3] - bounds[1]) / cells.length);
+}
+
 // ---- drawing ----
-function cellSize() {
-  const h = grid.length, w = grid[0]?.length ?? 1;
+function scale() {
   const box = canvas.parentElement.getBoundingClientRect();
-  return Math.max(4, Math.floor(Math.min((box.width - 32) / w, Math.max(440, innerHeight - 260) / h)));
+  const s = Math.min((box.width - 32) / (bounds[2] - bounds[0]), Math.max(440, innerHeight - 260) / (bounds[3] - bounds[1]));
+  return polys ? s : Math.max(4, Math.floor(s));
 }
 
 const rgb = hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
-// One pixel per cell; drawImage scales it up, so a frame costs one typed-array pass.
-const cells = document.createElement("canvas"), cellsCtx = cells.getContext("2d");
+// Cell id under every device pixel (-1 outside the board), rebuilt only when the board or
+// canvas size changes, so a frame is one pass over pixels whatever the cell count.
+let idmap = null, idmapFor = null, boards = 0;
+
+function rasterize(dw, dh, k) {
+  const ids = new Int32Array(dw * dh).fill(-1), [x0, y0] = bounds;
+  if (!polys) {
+    for (let y = 0; y < dh; y++) {
+      const row = Math.min(H - 1, Math.floor(y / k)) * W;
+      for (let x = 0; x < dw; x++) ids[y * dw + x] = row + Math.min(W - 1, Math.floor(x / k));
+    }
+    return ids;
+  }
+  // All tilings here are convex, so each pixel row crosses a cell in one span.
+  polys.forEach((p, id) => {
+    let top = Infinity, bottom = -Infinity;
+    for (let i = 1; i < p.length; i += 2) { top = Math.min(top, p[i]); bottom = Math.max(bottom, p[i]); }
+    const ya = Math.max(0, Math.ceil((top - y0) * k - 0.5)), yb = Math.min(dh - 1, Math.ceil((bottom - y0) * k - 0.5) - 1);
+    for (let y = ya; y <= yb; y++) {
+      const fy = (y + 0.5) / k + y0;
+      let left = Infinity, right = -Infinity;
+      for (let a = 0, b = p.length - 2; a < p.length; b = a, a += 2) {
+        const [ax, ay, bx, by] = [p[a], p[a + 1], p[b], p[b + 1]];
+        if ((ay > fy) === (by > fy)) continue;
+        const fx = ax + (fy - ay) * (bx - ax) / (by - ay);
+        left = Math.min(left, fx); right = Math.max(right, fx);
+      }
+      const xa = Math.max(0, Math.ceil((left - x0) * k - 0.5)), xb = Math.min(dw - 1, Math.ceil((right - x0) * k - 0.5) - 1);
+      ids.fill(id, y * dw + xa, y * dw + xb + 1);
+    }
+  });
+  return ids;
+}
 
 function draw() {
-  if (!grid.length) return;
-  const s = cellSize(), h = grid.length, w = grid[0].length;
-  const dpr = devicePixelRatio || 1;
-  if (canvas.width !== w * s * dpr || canvas.height !== h * s * dpr) {
-    canvas.width = w * s * dpr; canvas.height = h * s * dpr;
-    canvas.style.width = `${w * s}px`; canvas.style.height = `${h * s}px`;
+  if (!cells.length) return;
+  const s = scale(), [x0, y0, x1, y1] = bounds, cw = Math.ceil((x1 - x0) * s), ch = Math.ceil((y1 - y0) * s);
+  const dpr = devicePixelRatio || 1, dw = Math.round(cw * dpr), dh = Math.round(ch * dpr);
+  if (canvas.width !== dw || canvas.height !== dh) {
+    canvas.width = dw; canvas.height = dh;
+    canvas.style.width = `${cw}px`; canvas.style.height = `${ch}px`;
   }
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  if (idmapFor !== `${boards}:${dw}x${dh}`) {
+    idmap = rasterize(dw, dh, s * dpr); idmapFor = `${boards}:${dw}x${dh}`;
+  }
   const c = Object.fromEntries(["--wall", "--open", "--path", "--start", "--goal", "--flood-a", "--flood-b"]
     .map(k => [k, color(k)]));
   const flood = solution && $("show-flood").checked ? solution.reached_at : null;
   if (solution && solution.maxLoop === undefined)
     solution.maxLoop = solution.reached_at.reduce((m, v) => v === null ? m : Math.max(m, v), 1);
   const [wall, open, fa, fb] = ["--wall", "--open", "--flood-a", "--flood-b"].map(k => rgb(c[k]));
-  const ramp = Array.from({ length: 256 }, (_, k) => fa.map((v, i) => Math.round(v + (fb[i] - v) * k / 255)));
-  if (cells.width !== w || cells.height !== h) { cells.width = w; cells.height = h; }
-  const img = cellsCtx.createImageData(w, h), px = img.data;
-  for (let r = 0, i = 0; r < h; r++) {
-    const row = grid[r];
-    for (let col = 0; col < w; col++, i++) {
-      const t = flood && flood[i];
-      const [R, G, B] = row[col] === "#" ? wall
-        : t !== null && t !== undefined && t <= frame ? ramp[Math.round(255 * t / solution.maxLoop)] : open;
-      px[4 * i] = R; px[4 * i + 1] = G; px[4 * i + 2] = B; px[4 * i + 3] = 255;
-    }
+  // Little-endian RGBA words: 0 wall, 1 open, 2.. flood ramp from early to late loop.
+  const word = ([r, g, b]) => (255 << 24 | b << 16 | g << 8 | r) >>> 0;
+  const palette = Uint32Array.from([wall, open, ...Array.from({ length: 256 }, (_, k) => fa.map((v, i) => Math.round(v + (fb[i] - v) * k / 255)))], word);
+  const colours = new Uint32Array(cells.length);
+  for (let i = 0; i < cells.length; i++) {
+    const t = flood && flood[i];
+    colours[i] = palette[cells[i] === "#" ? 0 : t !== null && t !== undefined && t <= frame ? 2 + Math.round(255 * t / solution.maxLoop) : 1];
   }
-  cellsCtx.putImageData(img, 0, 0);
-  ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(cells, 0, 0, w * s, h * s);
+  const img = new ImageData(dw, dh), px = new Uint32Array(img.data.buffer);
+  for (let p = 0; p < px.length; p++) { const id = idmap[p]; if (id >= 0) px[p] = colours[id]; }
+  ctx.putImageData(img, 0, 0);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const at = i => [(centres[i][0] - x0) * s, (centres[i][1] - y0) * s], u = unit * s;
   const path = solution?.path;
   if (path && frame >= solution.loops) {
-    ctx.strokeStyle = c["--path"]; ctx.lineWidth = Math.max(2, s * 0.35);
+    ctx.strokeStyle = c["--path"]; ctx.lineWidth = Math.max(2, u * 0.35);
     ctx.lineCap = ctx.lineJoin = "round";
-    ctx.shadowColor = c["--path"]; ctx.shadowBlur = s * 0.6;
+    ctx.shadowColor = c["--path"]; ctx.shadowBlur = u * 0.6;
     ctx.beginPath();
-    path.forEach(([r, col], i) => ctx[i ? "lineTo" : "moveTo"](col * s + s / 2, r * s + s / 2));
+    path.forEach((id, i) => ctx[i ? "lineTo" : "moveTo"](...at(id)));
     ctx.stroke(); ctx.shadowBlur = 0;
   }
-  for (const [ch, key, shape] of [["S", "--start", "circle"], ["G", "--goal", "diamond"]]) {
-    const r = grid.findIndex(row => row.includes(ch));
-    if (r < 0) continue;
-    const x = grid[r].indexOf(ch) * s + s / 2, y = r * s + s / 2, rad = s * 0.42;
-    ctx.fillStyle = c[key]; ctx.shadowColor = c[key]; ctx.shadowBlur = s * 0.8;
+  for (const [ch, key, mark] of [["S", "--start", "circle"], ["G", "--goal", "diamond"]]) {
+    const i = cells.indexOf(ch);
+    if (i < 0) continue;
+    const [x, y] = at(i), rad = u * 0.42;
+    ctx.fillStyle = c[key]; ctx.shadowColor = c[key]; ctx.shadowBlur = u * 0.8;
     ctx.beginPath();
-    if (shape === "circle") ctx.arc(x, y, rad, 0, Math.PI * 2);
+    if (mark === "circle") ctx.arc(x, y, rad, 0, Math.PI * 2);
     else { ctx.moveTo(x, y - rad); ctx.lineTo(x + rad, y); ctx.lineTo(x, y + rad); ctx.lineTo(x - rad, y); }
     ctx.fill(); ctx.shadowBlur = 0;
   }
@@ -316,16 +381,14 @@ function draw() {
 
 // ---- stats ----
 function mazeStats() {
-  const h = grid.length, w = grid[0].length, cells = h * w;
-  const walls = grid.reduce((n, row) => n + [...row].filter(ch => ch === "#").length, 0);
-  $("s-size").textContent = `${w}×${h}`;
-  $("s-cells").textContent = fmt(cells);
-  $("s-open").textContent = fmt(cells - walls);
+  const n = cells.length, walls = cells.filter(ch => ch === "#").length;
+  $("s-size").textContent = `${W}×${H}`;
+  $("s-cells").textContent = fmt(n);
+  $("s-open").textContent = fmt(n - walls);
   $("s-walls").textContent = fmt(walls);
-  $("s-density").textContent = `${(100 * walls / cells).toFixed(1)}%`;
-  $("b-density").style.width = `${100 * walls / cells}%`;
+  $("s-density").textContent = `${(100 * walls / n).toFixed(1)}%`;
+  $("b-density").style.width = `${100 * walls / n}%`;
 }
-
 function clearRun() {
   solution = null;
   for (const id of ["r-result", "r-path", "r-loops", "r-time", "r-tokens", "r-passes", "r-perloop", "r-coverage", "r-eff"])
@@ -358,22 +421,22 @@ function runStats(res) {
 async function generate() {
   showError("");
   try {
-    const res = await api("/api/generate", {
-      algorithm: $("algorithm").value, width: +$("width").value, height: +$("height").value, seed: +$("seed").value,
-    });
-    grid = res.rows.map(r => [...r]);
+    const req = { shape: $("shape").value, width: +$("width").value, height: +$("height").value };
+    const res = await api("/api/generate", { ...req, algorithm: $("algorithm").value, seed: +$("seed").value });
+    ({ shape, width: W, height: H } = req);
+    load(res);
     clearRun(); mazeStats(); draw();
     setStatus("Maze ready. Edit it or run the transformer.");
   } catch (e) { showError(e.message); }
 }
 
 async function solve() {
-  if (!grid.length) return;
+  if (!cells.length) return;
   showError("");
   const btn = $("solve"); btn.disabled = true;
   setStatus("Transformer looping to a fixed point…", "busy");
   try {
-    const res = await api("/api/solve", { rows: grid.map(r => r.join("")) });
+    const res = await api("/api/solve", { shape, width: W, height: H, cells: cells.join("") });
     solution = res; runStats(res);
     setStatus(res.path ? `Path found after ${fmt(res.loops)} loops.` : "Goal unreachable from start.",
       res.path ? "ok" : "bad");
@@ -400,30 +463,32 @@ function animate() {
 // ---- editing ----
 let painting = null;
 function cellAt(e) {
-  const rect = canvas.getBoundingClientRect(), s = rect.width / grid[0].length;
-  const col = Math.floor((e.clientX - rect.left) / s), r = Math.floor((e.clientY - rect.top) / s);
-  return r >= 0 && col >= 0 && r < grid.length && col < grid[0].length ? [r, col] : null;
+  const rect = canvas.getBoundingClientRect();
+  const x = Math.floor((e.clientX - rect.left) / rect.width * canvas.width), y = Math.floor((e.clientY - rect.top) / rect.height * canvas.height);
+  const id = x >= 0 && y >= 0 && x < canvas.width && y < canvas.height ? idmap[y * canvas.width + x] : -1;
+  return id < 0 ? null : id;
 }
-function place(ch, [r, col]) {
-  for (const row of grid) { const i = row.indexOf(ch); if (i >= 0) row[i] = "."; }
-  grid[r][col] = ch;
+function place(ch, i) {
+  const old = cells.indexOf(ch);
+  if (old >= 0) cells[old] = ".";
+  cells[i] = ch;
 }
 function edit(e) {
   const at = cellAt(e);
-  if (!at) return;
-  const [r, col] = at, tool = document.querySelector("input[name=tool]:checked").value, cur = grid[r][col];
+  if (at === null) return;
+  const tool = document.querySelector("input[name=tool]:checked").value, cur = cells[at];
   if (tool === "wall") {
     if (cur === "S" || cur === "G") return;
     painting ??= cur === "#" ? "." : "#";
     if (cur === painting) return;
-    grid[r][col] = painting;
+    cells[at] = painting;
   } else {
     place(tool === "start" ? "S" : "G", at);
   }
   clearRun(); mazeStats(); draw();
 }
-canvas.addEventListener("pointerdown", e => { if (!grid.length) return; canvas.setPointerCapture(e.pointerId); painting = null; edit(e); });
-canvas.addEventListener("pointermove", e => { if (e.buttons && grid.length) edit(e); });
+canvas.addEventListener("pointerdown", e => { if (!cells.length) return; canvas.setPointerCapture(e.pointerId); painting = null; edit(e); });
+canvas.addEventListener("pointermove", e => { if (e.buttons && cells.length) edit(e); });
 canvas.addEventListener("pointerup", () => { painting = null; });
 
 addEventListener("keydown", e => {
@@ -438,7 +503,7 @@ for (const id of ["width", "height"]) {
   const input = $(id), show = () => $(`${id}-v`).textContent = input.value;
   input.oninput = show; input.onchange = generate; show();
 }
-$("algorithm").onchange = generate;
+$("algorithm").onchange = $("shape").onchange = generate;
 $("seed").onchange = generate;
 $("dice").onclick = () => { $("seed").value = Math.floor(Math.random() * 1e9); generate(); };
 $("generate").onclick = generate;
