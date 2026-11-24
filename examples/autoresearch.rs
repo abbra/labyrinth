@@ -1,37 +1,97 @@
+use std::collections::VecDeque;
 use std::hint::black_box;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use labyrinth::{Cell, Maze, Model};
 
-const SIDE: usize = 512;
-const RUNS: usize = 3;
+const SIDE: usize = 1024;
+const RUNS: usize = 9;
 
 fn main() {
     let maze = open_square();
     let model = Model::new();
-    let mut times = Vec::with_capacity(RUNS);
-    let mut loops = Vec::with_capacity(RUNS);
-    let mut token_passes = Vec::with_capacity(RUNS);
+    let expected_length = 2 * (SIDE - 1) + 1;
+    let mut model_times = Vec::with_capacity(RUNS);
+    let mut bfs_times = Vec::with_capacity(RUNS);
 
-    for _ in 0..RUNS {
-        let start = Instant::now();
-        let trace = black_box(model.trace(black_box(&maze)));
-        times.push(start.elapsed().as_secs_f64() * 1_000.0);
-
-        let path = trace.path.as_ref().expect("open square must be solvable");
-        assert_eq!(path.len(), 2 * (SIDE - 1) + 1);
-        assert_eq!(path.first(), Some(&0));
-        assert_eq!(path.last(), Some(&(SIDE * SIDE - 1)));
-        loops.push(trace.loops);
-        token_passes.push(trace.token_passes);
+    for run in 0..RUNS {
+        for offset in 0..2 {
+            match (run + offset) % 2 {
+                0 => {
+                    let start = Instant::now();
+                    let path = black_box(model.solve(black_box(&maze)))
+                        .expect("open square must be solvable");
+                    model_times.push(start.elapsed());
+                    check_path(&maze, &path, expected_length);
+                }
+                _ => {
+                    let start = Instant::now();
+                    let path = black_box(queue_bfs(black_box(&maze)))
+                        .expect("open square must be solvable");
+                    bfs_times.push(start.elapsed());
+                    check_path(&maze, &path, expected_length);
+                }
+            }
+        }
     }
 
-    times.sort_by(f64::total_cmp);
-    loops.sort_unstable();
-    token_passes.sort_unstable();
-    println!("METRIC solve_ms={:.3}", times[RUNS / 2]);
-    println!("METRIC loops={}", loops[RUNS / 2]);
-    println!("METRIC token_passes={}", token_passes[RUNS / 2]);
+    let model_time = median(&mut model_times);
+    let bfs_time = median(&mut bfs_times);
+    println!(
+        "METRIC speedup={:.6}",
+        bfs_time.as_secs_f64() / model_time.as_secs_f64()
+    );
+    println!("METRIC solve_ms={:.3}", model_time.as_secs_f64() * 1_000.0);
+    println!(
+        "METRIC queue_bfs_ms={:.3}",
+        bfs_time.as_secs_f64() * 1_000.0
+    );
+}
+
+fn queue_bfs(maze: &Maze) -> Option<Vec<usize>> {
+    let start = maze.start();
+    let goal = maze.goal();
+    let mut previous = vec![usize::MAX; maze.cells().len()];
+    let mut queue = VecDeque::new();
+    previous[start] = start;
+    queue.push_back(start);
+
+    while let Some(cell) = queue.pop_front() {
+        if cell == goal {
+            break;
+        }
+        for &neighbor in maze.neighbours(cell) {
+            if previous[neighbor] == usize::MAX && maze.cells()[neighbor] != Cell::Wall {
+                previous[neighbor] = cell;
+                queue.push_back(neighbor);
+            }
+        }
+    }
+
+    (previous[goal] != usize::MAX).then(|| {
+        let mut path = vec![goal];
+        while *path.last().expect("path contains goal") != start {
+            path.push(previous[*path.last().expect("path contains goal")]);
+        }
+        path.reverse();
+        path
+    })
+}
+
+fn check_path(maze: &Maze, path: &[usize], expected_length: usize) {
+    assert_eq!(path.len(), expected_length);
+    assert_eq!(path.first(), Some(&maze.start()));
+    assert_eq!(path.last(), Some(&maze.goal()));
+    assert!(path.iter().all(|&cell| maze.cells()[cell] != Cell::Wall));
+    assert!(
+        path.windows(2)
+            .all(|pair| { maze.neighbours(pair[0]).contains(&pair[1]) })
+    );
+}
+
+fn median(times: &mut [Duration]) -> Duration {
+    times.sort_unstable();
+    times[times.len() / 2]
 }
 
 fn open_square() -> Maze {
@@ -52,5 +112,5 @@ fn open_square() -> Maze {
         }
     }
 
-    Maze::new(cells, edges).expect("512x512 square is a valid maze")
+    Maze::new(cells, edges).expect("1024x1024 square is a valid maze")
 }
