@@ -1,7 +1,6 @@
 //! Heap accounting for one solve, after the counting allocator in synta-fuzz.
 
 use std::alloc::{GlobalAlloc, Layout, System};
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
 
 /// The system allocator plus process-wide counters.
@@ -66,14 +65,12 @@ pub struct Usage {
     pub peak: u64,
 }
 
-/// Runs `f` and reports its heap use.
+/// Runs `f` and reports process-wide heap counter deltas.
 ///
-/// The counters are process-wide, so a lock keeps two measurements from overlapping.
-/// shortcut: allocations by other requests running at the same time still count,
-/// move to per-thread counters if the numbers must be exact under load.
+/// shortcut: concurrent measurements include each other's allocations, so use for
+/// approximate per-request reporting only; add request-local instrumentation if exact
+/// attribution is required.
 pub fn measure<T>(f: impl FnOnce() -> T) -> (T, Usage) {
-    static ONE_AT_A_TIME: Mutex<()> = Mutex::new(());
-    let _guard = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
     let base = LIVE.load(Relaxed);
     PEAK.store(base, Relaxed);
     let (allocs, bytes) = (ALLOCS.load(Relaxed), BYTES.load(Relaxed));

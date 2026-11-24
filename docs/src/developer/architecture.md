@@ -76,6 +76,11 @@ sequenceDiagram
 The server does not keep state between requests. It makes the board
 again for each solve.
 
+The server accepts concurrent clients. It runs up to two solves at once.
+Each solve runs on a blocking thread and holds a slot until it finishes.
+Maze generation also runs off the async workers. The heap counters are
+process-wide, so overlapping solves can affect each other's heap statistics.
+
 ## Design decisions
 
 | Decision | Reason |

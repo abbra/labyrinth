@@ -19,11 +19,21 @@ use board::{Board, Shape};
 use generate::Algorithm;
 use labyrinth::Model;
 use serde::{Deserialize, Serialize};
+use tokio::sync::Semaphore;
 
 /// Smallest side the carving generators can fit separate start and goal rooms into.
 const MIN_SIDE: usize = 5;
 /// Largest side accepted; a 321×321 maze of any shape solves in about 0.3 s on 24 cores.
 const MAX_SIDE: usize = 321;
+
+/// Bounds concurrent model runs to limit CPU oversubscription.
+const MAX_PARALLEL_SOLVES: usize = 2;
+
+#[derive(Clone)]
+struct AppState {
+    model: Arc<Model>,
+    solve_slots: Arc<Semaphore>,
+}
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
@@ -33,7 +43,10 @@ async fn main() -> std::io::Result<()> {
         .route("/api/model", get(model_info))
         .route("/api/generate", post(generate))
         .route("/api/solve", post(solve))
-        .with_state(Arc::new(Model::new()));
+        .with_state(AppState {
+            model: Arc::new(Model::new()),
+            solve_slots: Arc::new(Semaphore::new(MAX_PARALLEL_SOLVES)),
+        });
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     println!("listening on http://{}", listener.local_addr()?);
     axum::serve(listener, app).await
@@ -64,9 +77,9 @@ struct ModelInfo {
     max_side: usize,
 }
 
-async fn model_info(State(model): State<Arc<Model>>) -> Json<ModelInfo> {
+async fn model_info(State(state): State<AppState>) -> Json<ModelInfo> {
     Json(ModelInfo {
-        parameters: model.parameter_count(),
+        parameters: state.model.parameter_count(),
         max_side: MAX_SIDE,
     })
 }
@@ -92,21 +105,25 @@ struct GenerateResponse {
 async fn generate(Json(req): Json<GenerateRequest>) -> Result<Json<GenerateResponse>, BadRequest> {
     check_side("width", req.width)?;
     check_side("height", req.height)?;
-    let board = Board::new(req.shape, req.width, req.height);
-    let cells = generate::generate(&board, req.algorithm, req.seed);
-    let polygons = (board.shape != Shape::Square).then(|| {
-        // Millipixel precision keeps the JSON short.
-        let round = |v: f64| ((v * 1000.0).round() / 1000.0) as f32;
-        board
-            .polygons
-            .iter()
-            .map(|poly| poly.iter().flat_map(|p| p.map(round)).collect())
-            .collect()
-    });
-    Ok(Json(GenerateResponse {
-        cells: String::from_utf8(cells).expect("cells are ASCII"),
-        polygons,
-    }))
+    tokio::task::spawn_blocking(move || {
+        let board = Board::new(req.shape, req.width, req.height);
+        let cells = generate::generate(&board, req.algorithm, req.seed);
+        let polygons = (board.shape != Shape::Square).then(|| {
+            let round = |v: f64| ((v * 1000.0).round() / 1000.0) as f32;
+            board
+                .polygons
+                .iter()
+                .map(|poly| poly.iter().flat_map(|p| p.map(round)).collect())
+                .collect()
+        });
+        GenerateResponse {
+            cells: String::from_utf8(cells).expect("cells are ASCII"),
+            polygons,
+        }
+    })
+    .await
+    .map(Json)
+    .map_err(|_| BadRequest("maze generation failed".into()))
 }
 
 #[derive(Deserialize)]
@@ -147,7 +164,7 @@ struct UsageDef {
 }
 
 async fn solve(
-    State(model): State<Arc<Model>>,
+    State(state): State<AppState>,
     Json(req): Json<SolveRequest>,
 ) -> Result<Json<SolveResponse>, BadRequest> {
     check_side("width", req.width)?;
@@ -158,8 +175,15 @@ async fn solve(
         .map_err(|e| BadRequest(format!("invalid maze: {e}")))?;
     let tokens = board.len();
     let open_cells = req.cells.bytes().filter(|&b| b != b'#').count();
-    // The model loop is CPU-bound and multi-threaded; keep it off the async workers.
+    let permit = state
+        .solve_slots
+        .clone()
+        .acquire_owned()
+        .await
+        .expect("solve semaphore remains open");
+    let model = state.model.clone();
     let ((trace, micros), heap) = tokio::task::spawn_blocking(move || {
+        let _permit = permit;
         alloc::measure(|| {
             let started = Instant::now();
             let trace = model.trace(&maze);
