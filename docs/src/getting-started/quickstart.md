@@ -32,6 +32,8 @@ with `*`:
 ```bash
 cargo run -q --release --example solve < maze.txt
 ```
+Use **Download maze for Rust** in the web UI to save a square maze in this
+format, including any additional goals.
 
 ## Start the web UI
 

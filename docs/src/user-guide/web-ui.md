@@ -14,13 +14,15 @@ The browser-only variant uses the same UI but generates and solves mazes locally
 
 ## Edit a maze
 
-Select a tool (**Wall**, **Start** or **Goal**), or push its key. Then click a cell or drag over cells.
+Select a tool (**Wall**, **Start** or **Goals**), or push its key. Then click
+a cell or drag over cells. The **Goals** tool is additive: click multiple
+cells to place multiple goals. The maze panel shows the current goal count.
 
 | Key | Tool | Result |
 |-----|------|--------|
 | `w` | Wall | Toggles the cell between wall and open |
 | `s` | Start | Moves the start to the cell |
-| `g` | Goal | Adds a goal at the cell |
+| `g` | Goals | Adds goals at the selected cells |
 
 Clicks go to the correct cell for all shapes. This includes the notch of a
 dart, which is concave.
@@ -35,6 +37,16 @@ path and the search statistics.
 |--------|--------|
 | **Show goal flood-fill** | Colours each cell by the loop in which the search reached it |
 | **Animate loops** | Shows the search loop by loop, then the path |
+
+For a square maze, click **Download maze for Rust** to save the maze as
+`maze-WxH.txt`. Run the Rust solve example with:
+
+```bash
+cargo run -q --release --example solve < maze-WxH.txt
+```
+
+The Rust example reads square mazes as text. Other tilings need graph edges,
+so they are not offered for this text download.
 
 ## Statistics
 

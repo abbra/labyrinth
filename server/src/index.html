@@ -168,6 +168,8 @@
         </div>
       </label>
       <button class="primary" id="generate">Generate maze</button>
+      <button id="download" disabled>Download maze for Rust (.txt)</button>
+      <p class="hint">Square mazes only; use the file with <code>cargo run --example solve &lt; maze.txt</code>.</p>
     </div>
 
     <div class="card">
@@ -175,9 +177,9 @@
       <div class="seg" role="radiogroup" aria-label="Edit tool">
         <label><input type="radio" name="tool" value="wall" checked><span>▦ Wall</span></label>
         <label><input type="radio" name="tool" value="start"><span>● Start</span></label>
-        <label><input type="radio" name="tool" value="goal"><span>◆ Goal</span></label>
+        <label><input type="radio" name="tool" value="goal"><span>◆ Goals</span></label>
       </div>
-      <p class="hint">Click or drag on the maze. <kbd>W</kbd> <kbd>S</kbd> <kbd>G</kbd> switch tools, <kbd>Enter</kbd> solves.</p>
+      <p class="hint">Select Goals and click multiple cells to place goals. <kbd>W</kbd> <kbd>S</kbd> <kbd>G</kbd> switch tools; <kbd>Enter</kbd> solves.</p>
     </div>
 
     <div class="card">
@@ -213,6 +215,7 @@
         <div class="stat"><div class="k">Cells</div><div class="v" id="s-cells">–</div></div>
         <div class="stat"><div class="k">Open</div><div class="v" id="s-open">–</div></div>
         <div class="stat"><div class="k">Walls</div><div class="v" id="s-walls">–</div></div>
+        <div class="stat"><div class="k">Goals</div><div class="v" id="s-goals">–</div></div>
         <div class="stat wide"><div class="k">Wall density</div><div class="v" id="s-density">–</div><div class="bar"><i id="b-density"></i></div></div>
       </div>
     </div>
@@ -406,6 +409,7 @@ function mazeStats() {
   $("s-size").textContent = `${W}×${H}`;
   $("s-cells").textContent = fmt(n);
   $("s-open").textContent = fmt(n - walls);
+  $("s-goals").textContent = fmt(cells.filter(ch => ch === "G").length);
   $("s-walls").textContent = fmt(walls);
   $("s-density").textContent = `${(100 * walls / n).toFixed(1)}%`;
   $("b-density").style.width = `${100 * walls / n}%`;
@@ -454,9 +458,21 @@ async function generate() {
     const res = await api("/api/generate", { ...req, algorithm: $("algorithm").value, seed: +$("seed").value });
     ({ shape, width: W, height: H } = req);
     load(res);
+    $("download").disabled = shape !== "square";
     clearRun(); mazeStats(); draw();
     setStatus("Maze ready. Edit it or run the solver.");
   } catch (e) { showError(e.message); }
+}
+
+function downloadMaze() {
+  if (shape !== "square" || !cells.length) return;
+  const text = Array.from({ length: H }, (_, row) => cells.slice(row * W, (row + 1) * W).join("")).join("\n") + "\n";
+  const url = URL.createObjectURL(new Blob([text], { type: "text/plain" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `maze-${W}x${H}.txt`;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 async function solve() {
@@ -537,6 +553,7 @@ $("algorithm").onchange = $("shape").onchange = generate;
 $("seed").onchange = generate;
 $("dice").onclick = () => { $("seed").value = Math.floor(Math.random() * 1e9); generate(); };
 $("generate").onclick = generate;
+$("download").onclick = downloadMaze;
 $("solve").onclick = solve;
 $("show-flood").onchange = draw;
 addEventListener("resize", draw);
