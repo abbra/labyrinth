@@ -73,16 +73,20 @@ impl Model {
             for &i in &frontier {
                 for &j in maze.neighbours(i) {
                     if x[j] == 0 && maze.cells()[j] != Cell::Wall {
-                        x[j] = self.block(j, &x, maze) | PENDING;
+                        let slot = maze
+                            .neighbours(j)
+                            .iter()
+                            .position(|&neighbour| x[neighbour] != 0 && x[neighbour] & PENDING == 0)
+                            .expect("a candidate has a reached neighbour");
+                        x[j] = (slot + 1) as State | PENDING;
                         candidates.push(j);
                     }
                 }
             }
-            frontier.clear();
-            for j in candidates.drain(..) {
+            for &j in &candidates {
                 x[j] &= !PENDING;
-                frontier.push(j);
             }
+            std::mem::swap(&mut frontier, &mut candidates);
         }
         read_path(maze, &x)
     }
