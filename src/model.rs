@@ -1,4 +1,4 @@
-//! A looped transformer whose weights are written by hand, not trained.
+//! A looped transformer whose weights are generated from fixed BFS rules.
 //!
 //! Every maze cell is one token. One block (attention with one head per neighbour slot +
 //! ReLU MLP) is applied repeatedly. It floods outward from all goals: a cell becomes
@@ -92,7 +92,7 @@ impl Default for Model {
 }
 
 impl Model {
-    /// Writes all weights.
+    /// Generates all weights from the fixed solver rules.
     pub fn new() -> Self {
         Self {
             heads: std::array::from_fn(head),

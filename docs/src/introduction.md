@@ -1,12 +1,12 @@
 # Introduction
 
-**Labyrinth** finds paths through a maze with a transformer.
-Nobody trained this transformer. Each weight has a value that a person
-wrote by hand. The weights implement breadth-first search (BFS).
+**Labyrinth** finds paths through a maze with a transformer. The model is not
+trained on examples. `Model::new` generates its parameters from fixed solver
+rules: attention heads copy reached-neighbour state, and MLP units implement
+the BFS update rules. The generated parameters are the same for every maze.
 
-This approach is known as weight-space programming. You write the program
-directly into the weights of the network. Then you run the network in the
-usual way: attention, MLP, residual stream.
+This is weight-space programming: the rules are encoded in the transformer's
+weights, then run through attention, an MLP and a residual stream.
 
 ## What the model does
 
@@ -21,7 +21,7 @@ usual way: attention, MLP, residual stream.
 
 | Crate | Purpose |
 |-------|---------|
-| **labyrinth** | Library. Maze graph, the hand-written model, the solver loop |
+| **labyrinth** | Library. Maze graph, the rule-generated model, the solver loop |
 | **labyrinth-server** | Web server. Board shapes, maze generators, HTTP API, browser UI |
 | **labyrinth-wasm** | Browser bindings. Local generation and solving for the WASM demo |
 

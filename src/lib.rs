@@ -1,4 +1,4 @@
-//! Maze solving by a transformer whose weights are programmed by hand, not trained.
+//! Maze solving by a transformer whose weights are generated from fixed BFS rules.
 //!
 //! [`Model`] is a looped transformer: one attention + MLP block applied until the
 //! residual stream reaches a fixed point. Its weights encode breadth-first search, so

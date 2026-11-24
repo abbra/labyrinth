@@ -9,7 +9,9 @@ use labyrinth::Model;
 let model = Model::new();
 ```
 
-`Model::new` writes all weights. The weights do not depend on a maze.
+`Model::new` generates parameters deterministically from fixed solver rules.
+They do not depend on a maze. See [How the Model Works](../reference/model.md)
+for how the rules produce the weights.
 Make one model and use it for all mazes. `Model` is `Clone`, `Send` and
 `Sync`. The web server shares one model between all requests.
 

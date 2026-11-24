@@ -3,6 +3,12 @@
 The model is a looped transformer. One block (attention and MLP) runs
 again and again on the same tokens. The weights implement BFS from all goals.
 
+`Model::new` generates the parameters from fixed rules; it does not load
+trained weights or assign numeric values one by one. Each attention head is
+built to copy `REACHED` from one neighbour slot. The MLP generator turns the
+BFS update rules into paired ReLU units, using the maximum degree and step
+sharpness constants. This produces the same 1,472 parameters for every maze.
+
 ## Tokens
 
 Each cell is one token. A token is a vector of 20 values. This vector is

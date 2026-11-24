@@ -11,8 +11,8 @@ cargo build --release --workspace
 - `cargo fmt --all` sets the format.
 - `cargo clippy --workspace --all-targets -- -D warnings` must pass with
   no warnings.
-- Write the weights by hand. Do not train them.
-- The weights must not depend on the maze size or the tiling.
+- Keep weight construction deterministic and based on the solver rules. Do
+  not train maze-specific weights.
 
 ## Before you send a change
 

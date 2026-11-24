@@ -1,4 +1,4 @@
-//! Web front end for the hand-weighted maze-solving transformer.
+//! Web front end for a maze-solving transformer with rule-generated weights.
 //!
 //! `GET /` serves the single-page UI, `POST /api/generate` builds a maze and
 //! `POST /api/solve` runs the model and returns the path plus execution statistics.
