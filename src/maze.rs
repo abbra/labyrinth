@@ -90,7 +90,11 @@ impl Maze {
         if goals.is_empty() {
             return Err(MazeError::Goal);
         }
-        let open_square = square_info(&cells, &offsets, &targets);
+        let open_square = if goals.len() == 1 {
+            square_info(&cells, &offsets, &targets)
+        } else {
+            None
+        };
         Ok(Self {
             cells,
             offsets,

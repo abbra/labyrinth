@@ -60,10 +60,8 @@ impl Model {
     ///
     /// Panics if the model fails to terminate, which would indicate a bug in the solver rules.
     pub fn solve(&self, maze: &Maze) -> Option<Vec<usize>> {
-        if maze.goals().len() == 1 {
-            if let Some((side, preference)) = maze.open_square() {
-                return Some(open_square_path(maze, side, preference));
-            }
+        if let Some((side, preference)) = maze.open_square() {
+            return Some(open_square_path(maze, side, preference));
         }
         let start = maze.start();
         let mut x = embed(maze);
