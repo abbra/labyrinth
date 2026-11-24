@@ -1,3 +1,10 @@
+#[allow(dead_code)]
+#[path = "../server/src/board.rs"]
+mod board;
+#[allow(dead_code)]
+#[path = "../server/src/generate.rs"]
+mod generate;
+
 use std::cmp::Reverse;
 use std::collections::{BinaryHeap, VecDeque};
 use std::hint::black_box;
@@ -5,27 +12,57 @@ use std::time::{Duration, Instant};
 
 use labyrinth::{Cell, Maze, Model};
 
-const SIDE: usize = 512;
+const SWEEP_SIDES: [usize; 5] = [64, 128, 256, 512, 1024];
+const SEED: u64 = 1;
 const RUNS: usize = 9;
 
 fn main() {
-    let maze = open_square();
+    for side in SWEEP_SIDES {
+        let open = open_square(side);
+        benchmark(
+            &format!("open_square_{side}x{side}_single_goal"),
+            &open,
+            side,
+        );
+
+        // Square generation only reads these fields; skip expensive polygon geometry.
+        let board = board::Board {
+            shape: board::Shape::Square,
+            width: side,
+            height: side,
+            polygons: Vec::new(),
+            neighbours: Vec::new(),
+        };
+        let cells = generate::generate(&board, generate::Algorithm::Backtracker, SEED);
+        let maze = square_maze(side, &cells);
+        benchmark(
+            &format!("square_backtracker_{side}x{side}_seed_{SEED}"),
+            &maze,
+            side,
+        );
+    }
+}
+
+fn benchmark(name: &str, maze: &Maze, width: usize) {
     let start = maze.start();
     let goal = maze.goal();
+    let shortest = queue_bfs(maze).expect("benchmark maze is solvable");
+    let shortest_length = shortest.len();
+    check_path(maze, &shortest, start, goal, shortest_length);
+
     let model = Model::new();
     let mut times: [Vec<Duration>; 4] = std::array::from_fn(|_| Vec::with_capacity(RUNS));
-
     for run in 0..RUNS {
         for offset in 0..4 {
             let solver = (run + offset) % 4;
             let (elapsed, path) = match solver {
-                0 => time_model(&model, &maze),
-                1 => time_queue_bfs(&maze),
-                2 => time_bidirectional_bfs(&maze),
-                3 => time_a_star(&maze),
+                0 => time_model(&model, maze),
+                1 => time_queue_bfs(maze),
+                2 => time_bidirectional_bfs(maze),
+                3 => time_a_star(maze, width),
                 _ => unreachable!(),
             };
-            check_path(&maze, &path, start, goal);
+            check_path(maze, &path, start, goal, shortest_length);
             times[solver].push(elapsed);
         }
     }
@@ -40,40 +77,34 @@ fn main() {
     let bfs_ms = median_ms(&mut bfs_times);
     let bidirectional_ms = median_ms(&mut bidirectional_times);
     let a_star_ms = median_ms(&mut a_star_times);
-    println!("workload=512x512_open_square_single_goal runs={RUNS}");
+    println!("workload={name} cells={} runs={RUNS}", maze.cells().len());
     println!("model_solve_ms={model_ms:.3}");
     println!("queue_bfs_ms={bfs_ms:.3}");
     println!("bidirectional_bfs_ms={bidirectional_ms:.3}");
     println!("a_star_ms={a_star_ms:.3}");
-    println!("model_over_queue_bfs={:.2}x", model_ms / bfs_ms);
-    println!(
-        "model_over_bidirectional_bfs={:.2}x",
-        model_ms / bidirectional_ms
-    );
-    println!("model_over_a_star={:.2}x", model_ms / a_star_ms);
 }
 
 fn time_model(model: &Model, maze: &Maze) -> (Duration, Vec<usize>) {
     let start = Instant::now();
-    let path = black_box(model.solve(black_box(maze))).expect("open square is solvable");
+    let path = black_box(model.solve(black_box(maze))).expect("maze is solvable");
     (start.elapsed(), path)
 }
 
 fn time_queue_bfs(maze: &Maze) -> (Duration, Vec<usize>) {
     let start = Instant::now();
-    let path = black_box(queue_bfs(black_box(maze))).expect("open square is solvable");
+    let path = black_box(queue_bfs(black_box(maze))).expect("maze is solvable");
     (start.elapsed(), path)
 }
 
 fn time_bidirectional_bfs(maze: &Maze) -> (Duration, Vec<usize>) {
     let start = Instant::now();
-    let path = black_box(bidirectional_bfs(black_box(maze))).expect("open square is solvable");
+    let path = black_box(bidirectional_bfs(black_box(maze))).expect("maze is solvable");
     (start.elapsed(), path)
 }
 
-fn time_a_star(maze: &Maze) -> (Duration, Vec<usize>) {
+fn time_a_star(maze: &Maze, width: usize) -> (Duration, Vec<usize>) {
     let start = Instant::now();
-    let path = black_box(a_star(black_box(maze))).expect("open square is solvable");
+    let path = black_box(a_star(black_box(maze), width)).expect("maze is solvable");
     (start.elapsed(), path)
 }
 
@@ -192,7 +223,7 @@ fn bidirectional_bfs(maze: &Maze) -> Option<Vec<usize>> {
     Some(path)
 }
 
-fn a_star(maze: &Maze) -> Option<Vec<usize>> {
+fn a_star(maze: &Maze, width: usize) -> Option<Vec<usize>> {
     let start = maze.start();
     let goal = maze.goal();
     let mut distance = vec![usize::MAX; maze.cells().len()];
@@ -200,7 +231,7 @@ fn a_star(maze: &Maze) -> Option<Vec<usize>> {
     let mut frontier = BinaryHeap::new();
     distance[start] = 0;
     previous[start] = start;
-    frontier.push(Reverse((square_manhattan(start, goal), 0, start)));
+    frontier.push(Reverse((square_manhattan(start, goal, width), 0, start)));
 
     while let Some(Reverse((_, cost, cell))) = frontier.pop() {
         if cost != distance[cell] {
@@ -218,7 +249,7 @@ fn a_star(maze: &Maze) -> Option<Vec<usize>> {
                 distance[neighbour] = next_cost;
                 previous[neighbour] = cell;
                 frontier.push(Reverse((
-                    next_cost + square_manhattan(neighbour, goal),
+                    next_cost + square_manhattan(neighbour, goal, width),
                     next_cost,
                     neighbour,
                 )));
@@ -228,8 +259,8 @@ fn a_star(maze: &Maze) -> Option<Vec<usize>> {
     path_from_previous(start, goal, &previous)
 }
 
-fn square_manhattan(a: usize, b: usize) -> usize {
-    (a / SIDE).abs_diff(b / SIDE) + (a % SIDE).abs_diff(b % SIDE)
+fn square_manhattan(a: usize, b: usize, width: usize) -> usize {
+    (a / width).abs_diff(b / width) + (a % width).abs_diff(b % width)
 }
 
 fn path_from_previous(start: usize, goal: usize, previous: &[usize]) -> Option<Vec<usize>> {
@@ -249,10 +280,10 @@ fn path_from_previous(start: usize, goal: usize, previous: &[usize]) -> Option<V
     Some(path)
 }
 
-fn check_path(maze: &Maze, path: &[usize], start: usize, goal: usize) {
+fn check_path(maze: &Maze, path: &[usize], start: usize, goal: usize, shortest: usize) {
     assert_eq!(path.first(), Some(&start));
     assert_eq!(path.last(), Some(&goal));
-    assert_eq!(path.len(), 2 * (SIDE - 1) + 1);
+    assert_eq!(path.len(), shortest);
     assert!(path.iter().all(|&cell| maze.cells()[cell] != Cell::Wall));
     assert!(
         path.windows(2)
@@ -265,22 +296,37 @@ fn median_ms(times: &mut [Duration]) -> f64 {
     times[times.len() / 2].as_secs_f64() * 1_000.0
 }
 
-fn open_square() -> Maze {
-    let mut cells = vec![Cell::Open; SIDE * SIDE];
+fn open_square(side: usize) -> Maze {
+    let mut cells = vec![Cell::Open; side * side];
     cells[0] = Cell::Start;
-    cells[SIDE * SIDE - 1] = Cell::Goal;
+    cells[side * side - 1] = Cell::Goal;
+    Maze::new(cells, square_edges(side)).expect("open square is a valid maze")
+}
 
-    let mut edges = Vec::with_capacity(2 * SIDE * (SIDE - 1));
-    for row in 0..SIDE {
-        for col in 0..SIDE {
-            let cell = row * SIDE + col;
-            if col + 1 < SIDE {
-                edges.push((cell, cell + 1));
-            }
-            if row + 1 < SIDE {
-                edges.push((cell, cell + SIDE));
-            }
+fn square_maze(side: usize, cells: &[u8]) -> Maze {
+    assert_eq!(cells.len(), side * side);
+    let cells = cells
+        .iter()
+        .map(|&cell| match cell {
+            b'#' => Cell::Wall,
+            b'.' => Cell::Open,
+            b'S' => Cell::Start,
+            b'G' => Cell::Goal,
+            _ => panic!("unexpected generated cell {}", cell as char),
+        })
+        .collect();
+    Maze::new(cells, square_edges(side)).expect("generated square is a valid maze")
+}
+
+fn square_edges(side: usize) -> Vec<(usize, usize)> {
+    let mut edges = Vec::with_capacity(2 * side * (side - 1));
+    for cell in 0..side * side {
+        if cell % side + 1 < side {
+            edges.push((cell, cell + 1));
+        }
+        if cell / side + 1 < side {
+            edges.push((cell, cell + side));
         }
     }
-    Maze::new(cells, edges).expect("512x512 square is a valid maze")
+    edges
 }

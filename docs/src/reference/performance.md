@@ -45,23 +45,29 @@ three-run median is 5.514 ms, a 28.7× speed-up. Both report 1,023 loops and
 ### Comparing solve algorithms
 
 `cargo run --release --example bfs_compare` compares `Model::solve` with
-queue-based BFS, bidirectional BFS, and A* on the same open 512×512 single-goal
-maze. A* uses the grid's Manhattan-distance heuristic. Solver order rotates
-across nine runs; reported values are medians. The benchmark validates every
-route's endpoints, traversable cells, edges, and shortest length outside the
-timed region.
+queue-based BFS, bidirectional BFS, and A* on both open-square and deterministic
+square backtracker mazes at every open-square sweep size: 64, 128, 256, 512,
+and 1024. Backtracker mazes use seed 1. Maze generation and construction are
+outside the timed region. A* uses Manhattan distance for the square-grid
+heuristic.
 
-| Solver | Median solve time (ms) |
-|--------|------------------------|
-| `Model::solve` | 3.534 |
-| Queue-based BFS | 4.165 |
-| Bidirectional BFS | 4.429 |
-| A* | 12.362 |
+| Workload | Cells | `Model::solve` (ms) | Queue BFS (ms) | Bidirectional BFS (ms) | A* (ms) |
+|----------|------:|-------------------:|---------------:|-----------------------:|--------:|
+| Open square 64×64 | 4,096 | 0.041 | 0.037 | 0.044 | 0.163 |
+| Backtracker 64×64 | 4,096 | 0.026 | 0.019 | 0.022 | 0.028 |
+| Open square 128×128 | 16,384 | 0.163 | 0.118 | 0.143 | 0.641 |
+| Backtracker 128×128 | 16,384 | 0.146 | 0.166 | 0.117 | 0.253 |
+| Open square 256×256 | 65,536 | 0.511 | 0.591 | 0.584 | 2.704 |
+| Backtracker 256×256 | 65,536 | 0.777 | 0.530 | 0.497 | 0.680 |
+| Open square 512×512 | 262,144 | 3.563 | 4.042 | 4.933 | 12.372 |
+| Backtracker 512×512 | 262,144 | 3.956 | 0.930 | 1.198 | 1.202 |
+| Open square 1024×1024 | 1,048,576 | 15.419 | 22.837 | 20.089 | 40.297 |
+| Backtracker 1024×1024 | 1,048,576 | 25.649 | 16.654 | 16.999 | 23.913 |
 
-On this workload, `Model::solve` took 0.85× as long as queue BFS, 0.80× as
-long as bidirectional BFS, and 0.29× as long as A*. These measurements cover
-one open-grid workload only; they do not establish performance on obstacle
-mazes. The timings vary with system load.
+Values are medians of nine runs with solver order rotated. Every route's
+endpoints, traversable cells, edges, and shortest length are checked outside
+the timed region. These results cover these workloads only; timings vary with
+system load.
 
 ## Server: 321×321 boards
 
