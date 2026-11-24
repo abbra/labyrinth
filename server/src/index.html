@@ -147,10 +147,10 @@
         </select>
       </label>
       <label>Width <span class="val" id="width-v"></span>
-        <input type="range" id="width" min="5" max="81" value="31">
+        <input type="range" id="width" min="5" max="321" value="31">
       </label>
       <label>Height <span class="val" id="height-v"></span>
-        <input type="range" id="height" min="5" max="81" value="21">
+        <input type="range" id="height" min="5" max="321" value="21">
       </label>
       <label>Seed
         <div class="row">
@@ -334,7 +334,7 @@ function runStats(res) {
   $("r-time").textContent = fmtTime(res.micros);
   $("r-tokens").textContent = fmt(res.tokens);
   $("r-params").textContent = fmt(params);
-  $("r-passes").textContent = fmt(res.loops * res.tokens);
+  $("r-passes").textContent = fmt(res.token_passes);
   $("r-perloop").textContent = fmtTime(Math.round(res.micros / Math.max(1, res.loops)));
   const cov = res.open_cells ? res.reached_cells / res.open_cells : 0;
   $("r-reached").textContent = `(${fmt(res.reached_cells)} / ${fmt(res.open_cells)})`;

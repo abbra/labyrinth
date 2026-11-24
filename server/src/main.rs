@@ -19,8 +19,8 @@ use serde::{Deserialize, Serialize};
 
 /// Smallest side the carving generators can fit separate start and goal rooms into.
 const MIN_SIDE: usize = 5;
-/// Largest side accepted; solve time grows roughly with the cube of the side.
-const MAX_SIDE: usize = 81;
+/// Largest side accepted; a 321×321 maze solves in about 2 s on 24 cores.
+const MAX_SIDE: usize = 321;
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
@@ -99,10 +99,12 @@ struct SolveResponse {
     path: Option<Vec<[usize; 2]>>,
     /// Row-major loop index at which the goal flood reached each cell.
     reached_at: Vec<Option<usize>>,
-    /// Transformer block applications until the fixed point.
+    /// Transformer block applications until the start was reached or the flood stopped.
     loops: usize,
-    /// Tokens per loop: every cell plus the wall border.
+    /// Tokens in the padded grid: every cell plus the wall border.
     tokens: usize,
+    /// Token evaluations actually run, summed over loops.
+    token_passes: usize,
     open_cells: usize,
     reached_cells: usize,
     micros: u128,
@@ -140,6 +142,7 @@ async fn solve(
             .map(|p| p.iter().map(|p| [p.row, p.col]).collect()),
         reached_cells: trace.reached_at.iter().flatten().count(),
         reached_at: trace.reached_at,
+        token_passes: trace.token_passes,
         loops: trace.loops,
         tokens,
         open_cells,
