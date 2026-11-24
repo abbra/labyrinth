@@ -73,15 +73,15 @@ fn benchmark(name: &str, maze: &Maze, width: usize) {
         mut bidirectional_times,
         mut a_star_times,
     ] = times;
-    let model_ms = median_ms(&mut model_times);
-    let bfs_ms = median_ms(&mut bfs_times);
-    let bidirectional_ms = median_ms(&mut bidirectional_times);
-    let a_star_ms = median_ms(&mut a_star_times);
+    let model_us = median_us(&mut model_times);
+    let bfs_us = median_us(&mut bfs_times);
+    let bidirectional_us = median_us(&mut bidirectional_times);
+    let a_star_us = median_us(&mut a_star_times);
     println!("workload={name} cells={} runs={RUNS}", maze.cells().len());
-    println!("model_solve_ms={model_ms:.3}");
-    println!("queue_bfs_ms={bfs_ms:.3}");
-    println!("bidirectional_bfs_ms={bidirectional_ms:.3}");
-    println!("a_star_ms={a_star_ms:.3}");
+    println!("model_solve_us={model_us:.1}");
+    println!("queue_bfs_us={bfs_us:.1}");
+    println!("bidirectional_bfs_us={bidirectional_us:.1}");
+    println!("a_star_us={a_star_us:.1}");
 }
 
 fn time_model(model: &Model, maze: &Maze) -> (Duration, Vec<usize>) {
@@ -291,9 +291,9 @@ fn check_path(maze: &Maze, path: &[usize], start: usize, goal: usize, shortest: 
     );
 }
 
-fn median_ms(times: &mut [Duration]) -> f64 {
+fn median_us(times: &mut [Duration]) -> f64 {
     times.sort_unstable();
-    times[times.len() / 2].as_secs_f64() * 1_000.0
+    times[times.len() / 2].as_secs_f64() * 1_000_000.0
 }
 
 fn open_square(side: usize) -> Maze {

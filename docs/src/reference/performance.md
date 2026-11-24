@@ -51,24 +51,24 @@ and 1024. Backtracker mazes use seed 1. Maze generation and construction are
 outside the timed region. A* uses Manhattan distance for the square-grid
 heuristic.
 
-| Workload | Cells | `Model::solve` (ms) | Queue BFS (ms) | Bidirectional BFS (ms) | A* (ms) |
+| Workload | Cells | `Model::solve` (µs) | Queue BFS (µs) | Bidirectional BFS (µs) | A* (µs) |
 |----------|------:|-------------------:|---------------:|-----------------------:|--------:|
-| Open square 64×64 | 4,096 | 0.000 | 0.024 | 0.029 | 0.103 |
-| Backtracker 64×64 | 4,096 | 0.019 | 0.010 | 0.016 | 0.022 |
-| Open square 128×128 | 16,384 | 0.000 | 0.119 | 0.133 | 0.577 |
-| Backtracker 128×128 | 16,384 | 0.132 | 0.166 | 0.116 | 0.249 |
-| Open square 256×256 | 65,536 | 0.001 | 0.619 | 0.575 | 2.721 |
-| Backtracker 256×256 | 65,536 | 0.777 | 0.522 | 0.511 | 0.752 |
-| Open square 512×512 | 262,144 | 0.001 | 3.732 | 4.687 | 12.329 |
-| Backtracker 512×512 | 262,144 | 4.120 | 1.006 | 1.291 | 1.299 |
-| Open square 1024×1024 | 1,048,576 | 0.002 | 21.898 | 20.826 | 41.025 |
-| Backtracker 1024×1024 | 1,048,576 | 24.651 | 16.711 | 18.284 | 24.756 |
+| Open square 64×64 | 4,096 | 0.2 | 37.7 | 44.8 | 163.3 |
+| Backtracker 64×64 | 4,096 | 27.7 | 15.8 | 17.2 | 28.1 |
+| Open square 128×128 | 16,384 | 0.4 | 122.0 | 133.5 | 589.5 |
+| Backtracker 128×128 | 16,384 | 133.6 | 169.4 | 120.5 | 265.3 |
+| Open square 256×256 | 65,536 | 0.6 | 579.1 | 574.0 | 2,707.0 |
+| Backtracker 256×256 | 65,536 | 770.7 | 527.7 | 502.9 | 686.7 |
+| Open square 512×512 | 262,144 | 1.3 | 4,018.4 | 5,143.7 | 12,410.4 |
+| Backtracker 512×512 | 262,144 | 3,997.9 | 979.6 | 1,269.5 | 1,267.5 |
+| Open square 1024×1024 | 1,048,576 | 1.7 | 22,377.8 | 20,168.5 | 41,418.4 |
+| Backtracker 1024×1024 | 1,048,576 | 24,583.7 | 16,819.9 | 16,594.2 | 24,046.8 |
 
 The comparison sweep was rerun on 2026-11-25. Values are medians of nine
-runs with solver order rotated. Times are printed to 0.001 ms, so `0.000`
-indicates a time below 0.0005 ms. Every route's endpoints, traversable cells,
-edges, and shortest length are checked outside the timed region. These results
-cover these workloads only; timings vary with system load.
+runs with solver order rotated, printed to 0.1 µs. `0.0` means below 0.05 µs.
+Every route's endpoints, traversable cells, edges, and shortest length are
+checked outside the timed region. Sub-microsecond timings are sensitive to
+timer and system noise; interpret them as approximate.
 
 ## Server: 321×321 boards
 
