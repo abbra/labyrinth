@@ -144,6 +144,7 @@
           <option value="hex">Hexagon</option>
           <option value="triangle">Triangle</option>
           <option value="penrose">Penrose rhombs · aperiodic</option>
+          <option value="kite-dart">Penrose kites &amp; darts · concave</option>
         </select>
       </label>
       <label>Algorithm
@@ -307,22 +308,25 @@ function rasterize(dw, dh, k) {
     }
     return ids;
   }
-  // All tilings here are convex, so each pixel row crosses a cell in one span.
+  // Even-odd scanline fill: a row may cross a concave cell (a dart) in two spans.
+  const xs = [];
   polys.forEach((p, id) => {
     let top = Infinity, bottom = -Infinity;
     for (let i = 1; i < p.length; i += 2) { top = Math.min(top, p[i]); bottom = Math.max(bottom, p[i]); }
     const ya = Math.max(0, Math.ceil((top - y0) * k - 0.5)), yb = Math.min(dh - 1, Math.ceil((bottom - y0) * k - 0.5) - 1);
     for (let y = ya; y <= yb; y++) {
       const fy = (y + 0.5) / k + y0;
-      let left = Infinity, right = -Infinity;
+      xs.length = 0;
       for (let a = 0, b = p.length - 2; a < p.length; b = a, a += 2) {
         const [ax, ay, bx, by] = [p[a], p[a + 1], p[b], p[b + 1]];
         if ((ay > fy) === (by > fy)) continue;
-        const fx = ax + (fy - ay) * (bx - ax) / (by - ay);
-        left = Math.min(left, fx); right = Math.max(right, fx);
+        xs.push(ax + (fy - ay) * (bx - ax) / (by - ay));
       }
-      const xa = Math.max(0, Math.ceil((left - x0) * k - 0.5)), xb = Math.min(dw - 1, Math.ceil((right - x0) * k - 0.5) - 1);
-      ids.fill(id, y * dw + xa, y * dw + xb + 1);
+      xs.sort((a, b) => a - b);
+      for (let i = 0; i + 1 < xs.length; i += 2) {
+        const xa = Math.max(0, Math.ceil((xs[i] - x0) * k - 0.5)), xb = Math.min(dw - 1, Math.ceil((xs[i + 1] - x0) * k - 0.5) - 1);
+        if (xa <= xb) ids.fill(id, y * dw + xa, y * dw + xb + 1);
+      }
     }
   });
   return ids;

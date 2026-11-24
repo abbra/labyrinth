@@ -241,7 +241,13 @@ mod tests {
     #[test]
     fn carved_mazes_are_solvable_on_every_shape() {
         let model = Model::new();
-        for shape in [Shape::Square, Shape::Hex, Shape::Triangle, Shape::Penrose] {
+        for shape in [
+            Shape::Square,
+            Shape::Hex,
+            Shape::Triangle,
+            Shape::Penrose,
+            Shape::KiteDart,
+        ] {
             for algorithm in [Algorithm::Backtracker, Algorithm::Prim, Algorithm::Braid] {
                 for (h, w, seed) in [(5, 5, 1), (6, 8, 2), (11, 15, 3), (20, 9, 4)] {
                     let board = Board::new(shape, w, h);
@@ -268,7 +274,7 @@ mod tests {
     #[test]
     fn large_boards_are_carved_throughout() {
         // Penrose 321 seed 1 once boxed its corner start in after 19 cells.
-        for shape in [Shape::Hex, Shape::Triangle, Shape::Penrose] {
+        for shape in [Shape::Hex, Shape::Triangle, Shape::Penrose, Shape::KiteDart] {
             let board = Board::new(shape, 321, 321);
             let cells = generate(&board, Algorithm::Backtracker, 1);
             let open = cells.iter().filter(|&&c| c != b'#').count();

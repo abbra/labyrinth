@@ -18,6 +18,8 @@ pub enum Shape {
     Triangle,
     /// Aperiodic Penrose P3 rhombs (thick and thin), clipped to the board rectangle.
     Penrose,
+    /// Aperiodic Penrose P2 kites and darts; darts are concave.
+    KiteDart,
 }
 
 pub type Point = [f64; 2];
@@ -32,8 +34,8 @@ pub struct Board {
 }
 
 impl Board {
-    /// `width × height` cells for the regular tilings; for Penrose a `width × height`
-    /// rectangle measured in rhomb edges.
+    /// `width × height` cells for the regular tilings; for the Penrose tilings a
+    /// `width × height` rectangle measured in unit edges.
     pub fn new(shape: Shape, width: usize, height: usize) -> Self {
         let polygons = match shape {
             Shape::Square => grid(width, height, |r, c| {
@@ -59,7 +61,8 @@ impl Board {
                     vec![[x, top], [x + 1.0, top], [x + 0.5, bottom]]
                 }
             }),
-            Shape::Penrose => penrose(width as f64, height as f64),
+            Shape::Penrose => penrose(width as f64, height as f64, false),
+            Shape::KiteDart => penrose(width as f64, height as f64, true),
         };
         let neighbours = neighbours(&polygons);
         Self {
@@ -136,18 +139,23 @@ fn neighbours(polygons: &[Vec<Point>]) -> Vec<Vec<usize>> {
     neighbours
 }
 
-/// Robinson-triangle deflation (Preshing's construction): a wheel of ten half-rhombs is
-/// subdivided until edges are 1 long; pairs sharing their `B–C` side form the rhombs.
-fn penrose(width: f64, height: f64) -> Vec<Vec<Point>> {
+/// Robinson-triangle deflation (after Preshing): a wheel of ten acute golden triangles is
+/// subdivided until edges reach unit scale, then mirror pairs are joined into cells. For
+/// rhombs (P3) halves pair on their `B–C` side, giving thick and thin rhombs with unit
+/// edges. For kites (P2) they pair on `A–C`: acute halves form kites, obtuse halves form
+/// concave darts, with edges 1 and φ.
+fn penrose(width: f64, height: f64, kites: bool) -> Vec<Vec<Point>> {
     let phi = (1.0 + 5f64.sqrt()) / 2.0;
     let lerp = |p: Point, q: Point, t: f64| [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t];
     let (hw, hh) = (width / 2.0, height / 2.0);
-    // Wheel radius φⁿ, so n deflations leave unit edges, and large enough to cover the board.
-    let mut radius = 1.0;
+    // Rhombs stop at legs of 1, kites at legs of φ so their short edges are 1.
+    let last = if kites { phi } else { 1.0 };
+    // Wheel radius lastφⁿ, so n deflations reach it, and large enough to cover the board.
+    let mut radius = last;
     while radius < hw.hypot(hh) + 2.0 {
         radius *= phi;
     }
-    // (thick, A, B, C): A is the apex, B–C the side shared with the other half.
+    // (obtuse, A, B, C): A is the apex; the acute ones are the P3 thin / P2 kite halves.
     let mut tris: Vec<(bool, Point, Point, Point)> = (0..10)
         .map(|i| {
             let at = |k: f64| {
@@ -157,31 +165,46 @@ fn penrose(width: f64, height: f64) -> Vec<Vec<Point>> {
                 ]
             };
             let (b, c) = (at(2.0 * i as f64 - 1.0), at(2.0 * i as f64 + 1.0));
-            if i % 2 == 0 {
+            // Mirror halves must meet on the side they pair on, which differs per tiling.
+            if (i % 2 == 0) != kites {
                 (false, [0.0, 0.0], c, b)
             } else {
                 (false, [0.0, 0.0], b, c)
             }
         })
         .collect();
-    // Children lie inside their parent, so triangles clear of the board can go early.
+    // Children lie inside their parent, so triangles clear of the board can go early; a
+    // kept cell's halves reach within φ of the board.
+    let margin = phi;
     let near = |ps: [Point; 3]| {
         let out = |f: &dyn Fn(Point) -> bool| ps.iter().all(|&p| f(p));
-        !(out(&|p| p[0] < -hw - 1.0)
-            || out(&|p| p[0] > hw + 1.0)
-            || out(&|p| p[1] < -hh - 1.0)
-            || out(&|p| p[1] > hh + 1.0))
+        !(out(&|p| p[0] < -hw - margin)
+            || out(&|p| p[0] > hw + margin)
+            || out(&|p| p[1] < -hh - margin)
+            || out(&|p| p[1] > hh + margin))
     };
-    while radius > 1.0 + 1e-9 {
+    while radius > last * (1.0 + 1e-9) {
         let mut next = Vec::with_capacity(tris.len() * 3);
-        for (thick, a, b, c) in tris {
-            if !thick {
-                let p = lerp(a, b, 1.0 / phi);
-                next.extend([(false, c, p, b), (true, p, c, a)]);
-            } else {
-                let q = lerp(b, a, 1.0 / phi);
-                let r = lerp(b, c, 1.0 / phi);
-                next.extend([(true, r, c, a), (true, q, r, b), (false, r, q, a)]);
+        for (obtuse, a, b, c) in tris {
+            match (kites, obtuse) {
+                (false, false) => {
+                    let p = lerp(a, b, 1.0 / phi);
+                    next.extend([(false, c, p, b), (true, p, c, a)]);
+                }
+                (false, true) => {
+                    let q = lerp(b, a, 1.0 / phi);
+                    let r = lerp(b, c, 1.0 / phi);
+                    next.extend([(true, r, c, a), (true, q, r, b), (false, r, q, a)]);
+                }
+                (true, false) => {
+                    let p = lerp(a, c, 1.0 / phi);
+                    let q = lerp(a, b, 1.0 / (phi * phi));
+                    next.extend([(false, b, c, p), (false, b, q, p), (true, q, p, a)]);
+                }
+                (true, true) => {
+                    let q = lerp(c, b, 1.0 / phi);
+                    next.extend([(false, c, q, a), (true, q, a, b)]);
+                }
             }
         }
         next.retain(|&(_, a, b, c)| near([a, b, c]));
@@ -190,17 +213,24 @@ fn penrose(width: f64, height: f64) -> Vec<Vec<Point>> {
     }
     let key = |[x, y]: Point| ((x * 1e4).round() as i64, (y * 1e4).round() as i64);
     let mut halves = HashMap::new();
-    let mut rhombs = Vec::new();
+    let mut cells = Vec::new();
     for (_, a, b, c) in tris {
-        let side = (key(b).min(key(c)), key(b).max(key(c)));
-        if let Some(other) = halves.insert(side, a) {
-            let centre = lerp(b, c, 0.5);
+        // The shared side and its far corner; the side's midpoint lies inside the cell.
+        let ((s, t), far) = if kites { ((a, c), b) } else { ((b, c), a) };
+        let side = (key(s).min(key(t)), key(s).max(key(t)));
+        if let Some(other) = halves.insert(side, far) {
+            let centre = lerp(s, t, 0.5);
             if centre[0].abs() <= hw && centre[1].abs() <= hh {
-                rhombs.push([a, b, other, c].map(|p| [p[0] + hw, p[1] + hh]).to_vec());
+                let cell = if kites {
+                    [a, b, c, other]
+                } else {
+                    [a, b, other, c]
+                };
+                cells.push(cell.map(|p| [p[0] + hw, p[1] + hh]).to_vec());
             }
         }
     }
-    rhombs
+    cells
 }
 
 #[cfg(test)]
@@ -214,6 +244,7 @@ mod tests {
             (Shape::Hex, 6, 6),
             (Shape::Triangle, 3, 3),
             (Shape::Penrose, 4, 4),
+            (Shape::KiteDart, 4, 4),
         ] {
             let board = Board::new(shape, 12, 9);
             let degrees: Vec<_> = board.neighbours.iter().map(Vec::len).collect();
@@ -233,5 +264,29 @@ mod tests {
                 assert!(((p[0] - q[0]).hypot(p[1] - q[1]) - 1.0).abs() < 1e-6);
             }
         }
+    }
+
+    #[test]
+    fn kites_and_darts_have_edges_one_and_phi_and_darts_are_concave() {
+        let phi = (1.0 + 5f64.sqrt()) / 2.0;
+        let board = Board::new(Shape::KiteDart, 60, 40);
+        let mut concave = 0;
+        for poly in &board.polygons {
+            let mut signs = [0; 2];
+            for k in 0..4 {
+                let (o, p, q) = (poly[k], poly[(k + 1) % 4], poly[(k + 2) % 4]);
+                let len = (p[0] - o[0]).hypot(p[1] - o[1]);
+                assert!(
+                    (len - 1.0).abs() < 1e-6 || (len - phi).abs() < 1e-6,
+                    "{len}"
+                );
+                let cross = (p[0] - o[0]) * (q[1] - p[1]) - (p[1] - o[1]) * (q[0] - p[0]);
+                signs[usize::from(cross > 0.0)] += 1;
+            }
+            concave += usize::from(signs[0].min(signs[1]) == 1);
+        }
+        // Darts are 1/φ² of the cells in the limit.
+        let share = concave as f64 / board.len() as f64;
+        assert!((share - 1.0 / (phi * phi)).abs() < 0.05, "{share}");
     }
 }
