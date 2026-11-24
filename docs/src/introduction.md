@@ -23,8 +23,10 @@ usual way: attention, MLP, residual stream.
 |-------|---------|
 | **labyrinth** | Library. Maze graph, the hand-written model, the solver loop |
 | **labyrinth-server** | Web server. Board shapes, maze generators, HTTP API, browser UI |
+| **labyrinth-wasm** | Browser bindings. Local generation and solving for the WASM demo |
 
-The library has no dependencies. The server uses tokio, axum and serde.
+The library has no dependencies. The server uses tokio, axum and serde. The
+WASM bindings use wasm-bindgen and serde.
 
 ## Design goals
 

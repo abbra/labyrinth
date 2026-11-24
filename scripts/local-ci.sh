@@ -36,10 +36,10 @@ else
 fi
 export RUSTDOCFLAGS="-D warnings"
 
-ALL_JOBS=(build fmt clippy test doc examples)
+ALL_JOBS=(build fmt clippy test doc examples wasm)
 declare -A JOB_STATUS=() JOB_SECS=()
 FAILED_JOBS=()
-declare -A JOB_DEPS=( [clippy]=build [test]=build [doc]=test [examples]=build )
+declare -A JOB_DEPS=( [clippy]=build [test]=build [doc]=test [examples]=build [wasm]=build )
 step() { printf '\n%s▶ %s%s\n' "$BOLD$BLUE" "$*" "$NC"; }
 ok() { printf '%s✔ %s%s\n' "$GREEN" "$*" "$NC"; }
 warn() { printf '%s! %s%s\n' "$YELLOW" "$*" "$NC"; }
@@ -91,6 +91,10 @@ job_examples() {
     printf '%s' "$maze" | cargo run -q --release --example solve >/dev/null &&
         printf '%s' "$maze" | cargo run -q --release --example bench >/dev/null
 }
+job_wasm() {
+    cargo build --release -p labyrinth-wasm --target wasm32-unknown-unknown &&
+        wasm-bindgen --target web --out-dir wasm/pkg target/wasm32-unknown-unknown/release/labyrinth_wasm.wasm
+}
 
 dispatch_job() {
     case "$1" in
@@ -100,6 +104,7 @@ dispatch_job() {
         test) run_job test job_test ;;
         doc) run_job doc job_doc ;;
         examples) run_job examples job_examples ;;
+        wasm) run_job wasm job_wasm ;;
         *) echo "Unknown job: $1" >&2; echo "Run '$0 --list' for available jobs." >&2; exit 1 ;;
     esac
 }

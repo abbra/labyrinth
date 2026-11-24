@@ -23,6 +23,20 @@ cargo build --release --workspace
 
 Always use `--release` for real mazes. A debug build is much slower.
 
+## Build the browser-only demo
+
+Install Fedora's `rust-std-static-wasm32-unknown-unknown` package and use a
+`wasm-bindgen` CLI matching the version pinned in `Cargo.lock` (0.2.127).
+`wasm-pack` is not required.
+
+```bash
+cargo build --release -p labyrinth-wasm --target wasm32-unknown-unknown
+wasm-bindgen --target web --out-dir wasm/pkg target/wasm32-unknown-unknown/release/labyrinth_wasm.wasm
+```
+
+Serve the repository root over HTTP and open `/wasm-demo/`. Maze generation and
+solving then run in the browser; heap allocation statistics are not available.
+
 ## Use the library in your crate
 
 Add a path dependency to your `Cargo.toml`:

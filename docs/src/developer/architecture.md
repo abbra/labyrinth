@@ -1,11 +1,13 @@
 # Architecture Overview
 
-Labyrinth is a Rust workspace with two crates.
+Labyrinth is a Rust workspace with three crates.
 
 ```mermaid
 graph LR
     LIB[labyrinth<br/>maze graph + model] --> SRV[labyrinth-server<br/>boards, generators, HTTP, UI]
-    SRV --> UI[index.html<br/>browser UI]
+    LIB --> WASM[labyrinth-wasm<br/>browser bindings]
+    SRV --> UI[index.html<br/>shared browser UI]
+    WASM --> UI
 ```
 
 ## labyrinth (library)
@@ -52,7 +54,13 @@ sequenceDiagram
 | `server/src/generate.rs` | `Algorithm`, the generators, start and goal placement |
 | `server/src/index.html` | The UI: HTML, CSS and JavaScript in one file |
 
-The binary includes `index.html` at compile time. Thus the server has no
+## labyrinth-wasm
+
+`wasm/src/lib.rs` exposes maze generation and solving through `wasm-bindgen`.
+It compiles the same board and generator modules used by the server. The
+`wasm-demo/` entry point opens the shared UI with its browser-only backend.
+
+The server binary includes `index.html` at compile time. Thus the server has no
 files to install.
 
 ### Request flow

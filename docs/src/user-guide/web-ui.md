@@ -1,7 +1,8 @@
 # Web UI
 
-Open the server address in a browser. The default is
-<http://127.0.0.1:3000/>.
+Open the server address in a browser for the server-backed UI, or open
+`/wasm-demo/` from a local HTTP server after [building the WASM module](../getting-started/installation.md#build-the-browser-only-demo).
+The browser-only variant uses the same UI but generates and solves mazes locally.
 
 ## Make a maze
 
@@ -26,8 +27,9 @@ dart, which is concave.
 
 ## Solve a maze
 
-Click **Run transformer** or push `Enter`. The UI sends the maze to the server. It
-then shows the path and the statistics.
+Click **Run transformer** or push `Enter`. The server-backed UI sends the maze
+to the server; the browser-only variant solves it in WebAssembly. Both show the
+path and the search statistics.
 
 | Option | Result |
 |--------|--------|
@@ -36,9 +38,8 @@ then shows the path and the statistics.
 
 ## Statistics
 
-The statistics panel shows the values from
-[POST /api/solve](http-api.md#post-apisolve): loops, tokens, token passes,
-reached cells, path length, time and heap use.
+The statistics panel shows loops, tokens, token passes, reached cells, path
+length and time. Heap use is only available from the server.
 
 ## How the UI draws a maze
 

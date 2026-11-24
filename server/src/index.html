@@ -239,6 +239,11 @@
 </main>
 
 <script>
+const wasmBackend = new URLSearchParams(location.search).get("backend") === "wasm";
+let wasm;
+const wasmReady = wasmBackend
+  ? import("../../wasm/pkg/labyrinth_wasm.js").then(async m => { await m.default(); wasm = m; })
+  : Promise.resolve();
 const $ = id => document.getElementById(id);
 const canvas = $("canvas"), ctx = canvas.getContext("2d");
 let cells = [], solution = null, frame = 0, params = 0;
@@ -259,6 +264,12 @@ const fmtTime = us => us < 1000 ? `${us} µs` : us < 1e6 ? `${(us / 1000).toFixe
 const fmtBytes = b => b < 1024 ? `${b} B` : b < 1 << 20 ? `${(b / 1024).toFixed(1)} KiB` : `${(b / (1 << 20)).toFixed(1)} MiB`;
 
 async function api(path, body) {
+  if (wasmBackend) {
+    await wasmReady;
+    if (path === "/api/model") return { parameters: wasm.parameter_count(), max_side: 321 };
+    if (path === "/api/generate") return JSON.parse(wasm.generate_maze(body.shape, body.algorithm, body.width, body.height, body.seed));
+    if (path === "/api/solve") return JSON.parse(wasm.solve_maze(body.shape, body.width, body.height, body.cells));
+  }
   const res = await fetch(path, body === undefined ? {} : {
     method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
   });
@@ -417,10 +428,14 @@ function runStats(res) {
   $("r-params").textContent = fmt(params);
   $("r-passes").textContent = fmt(res.token_passes);
   $("r-perloop").textContent = fmtTime(Math.round(res.micros / Math.max(1, res.loops)));
-  $("r-allocs").textContent = fmt(res.heap.allocs);
-  $("r-bytes").textContent = fmtBytes(res.heap.bytes);
-  $("r-peak").textContent = fmtBytes(res.heap.peak);
-  $("r-pertoken").textContent = fmtBytes(Math.round(res.heap.peak / Math.max(1, res.tokens)));
+  if (res.heap) {
+    $("r-allocs").textContent = fmt(res.heap.allocs);
+    $("r-bytes").textContent = fmtBytes(res.heap.bytes);
+    $("r-peak").textContent = fmtBytes(res.heap.peak);
+    $("r-pertoken").textContent = fmtBytes(Math.round(res.heap.peak / Math.max(1, res.tokens)));
+  } else {
+    for (const id of ["r-allocs", "r-bytes", "r-peak", "r-pertoken"]) $(id).textContent = "–";
+  }
   const cov = res.open_cells ? res.reached_cells / res.open_cells : 0;
   $("r-reached").textContent = `(${fmt(res.reached_cells)} / ${fmt(res.open_cells)})`;
   $("r-coverage").textContent = `${(100 * cov).toFixed(1)}%`;
