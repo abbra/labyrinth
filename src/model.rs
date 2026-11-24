@@ -172,12 +172,13 @@ fn open_square_path(maze: &Maze, side: usize, preferences: &[u8]) -> Vec<usize> 
     let distance = row.abs_diff(goal_row) + col.abs_diff(goal_col);
     let mut path = Vec::with_capacity(distance + 1);
     path.push(cell);
+    let bit = usize::from(row < goal_row) * 2 + usize::from(col < goal_col);
+    let preference_mask = 1u8 << bit;
     while cell != goal {
         let vertical = row != goal_row;
         let horizontal = col != goal_col;
         let vertical_first = if vertical && horizontal {
-            let bit = usize::from(row < goal_row) * 2 + usize::from(col < goal_col);
-            preferences[cell] & (1u8 << bit) != 0
+            preferences[cell] & preference_mask != 0
         } else {
             vertical
         };
