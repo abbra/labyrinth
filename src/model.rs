@@ -73,7 +73,6 @@ impl Model {
         let mut marked = vec![false; n];
         let mut dirty: Vec<_> = (0..n).collect();
         let mut updates = Vec::new();
-        let mut changed = Vec::new();
         let (start, max_loops) = (maze.start(), n + 1);
         let (mut loops, mut token_passes) = (0, 0);
         loop {
@@ -92,9 +91,6 @@ impl Model {
             dirty.clear();
             for (i, token) in updates.drain(..) {
                 x[i] = token;
-                changed.push(i);
-            }
-            for i in changed.drain(..) {
                 reached_at[i].get_or_insert(loops);
                 for j in std::iter::once(i).chain(maze.neighbours(i).iter().copied()) {
                     if !std::mem::replace(&mut marked[j], true) {
