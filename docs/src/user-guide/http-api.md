@@ -64,6 +64,10 @@ board. The server makes the board again and uses it to find the
 neighbours. You can change `cells` before you send it. For example, you
 can add walls or move the start.
 
+The endpoint calls `Model::trace` to return `reached_at` and flood statistics.
+It therefore runs the fixed-rule flood even for a single-goal open square;
+the direct-path shortcut is specific to `Model::solve`.
+
 Response:
 
 | Field | Meaning |

@@ -1,9 +1,10 @@
-//! A fixed-rule breadth-first-search solver for maze graphs.
+//! A fixed-rule breadth-first-search solver with route tracing.
 //!
-//! Each cell is one token in the equivalent transformer representation. At runtime,
-//! the solver applies boolean BFS rules directly to dirty cells. It floods outward
-//! from all goals, storing a pointer to the neighbour that first reached each cell.
-//! The solver then joins shortest paths to any remaining goals.
+//! `Model::solve` uses staged BFS frontiers for general graphs and a cached
+//! direct path for a single-goal, fully open square grid. `Model::trace`
+//! applies boolean BFS rules directly to dirty cells, floods outward from all
+//! goals, and records how each cell was reached. Both return shortest-path
+//! legs joining every goal.
 //!
 //! The equivalent graph transformer uses structural attention: each head selects one
 //! neighbour slot, with a sink for missing slots. Fixed weights therefore work for any
@@ -94,7 +95,8 @@ impl Model {
         read_path(maze, &x)
     }
 
-    /// Like [`Model::solve`], but also reports how the model got there.
+    /// Returns the route produced by [`Model::solve`] and details of how the
+    /// search reached each cell.
     ///
     /// # Panics
     ///

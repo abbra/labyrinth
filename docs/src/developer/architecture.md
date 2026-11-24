@@ -16,13 +16,20 @@ graph LR
 |------|---------|
 | `src/lib.rs` | Public exports |
 | `src/maze.rs` | `Maze`, `Cell`, `MazeError`, `MAX_DEGREE`, text parser |
-| `src/model.rs` | `Model`, `Trace`, the fixed-rule solver loop |
+| `src/model.rs` | `Model`, `Trace`, staged BFS solver and fixed-rule trace loop |
 
 The library has no geometry. A maze is cells plus edges. The neighbour
 lists use compressed sparse row (CSR) storage: one `offsets` array and one
 `targets` array.
 
-### Solver loop
+### Solve and trace
+
+`Model::solve` uses staged BFS frontiers for general graphs. For a single-goal,
+fully open square grid, `Maze` caches directional tie-break preferences and
+`solve` constructs a Manhattan-shortest path directly; it does not run the
+trace loop.
+
+`Model::trace` always runs the fixed-rule dirty-cell loop:
 
 ```mermaid
 sequenceDiagram
@@ -35,8 +42,8 @@ sequenceDiagram
     C->>C: build route through every goal
 ```
 
-The library solver is sequential. It evaluates only dirty cells; it does
-not create worker threads or materialize transformer weights.
+`trace` evaluates only dirty cells sequentially; both library methods are
+sequential and create no worker threads or transformer weights.
 
 ## labyrinth-server
 

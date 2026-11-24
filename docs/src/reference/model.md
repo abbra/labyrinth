@@ -1,10 +1,16 @@
 # How the Model Works
 
-`Model::trace` applies fixed BFS rules directly to cells. It does not
-construct or execute transformer weights. Each cell's runtime state is one
-byte: `0` means unreached, `1`–`8` identify the neighbour that first reached
-it, and `9` marks a goal. The solver floods outward from all goals, updates
-only dirty cells, then builds a route from the start through every goal.
+`Model::trace` applies fixed BFS rules directly to cells and records the
+search progress. It does not construct or execute transformer weights. Each
+cell's runtime state is one byte: `0` means unreached, `1`–`8` identify the
+neighbour that first reached it, and `9` marks a goal. The trace floods
+outward from all goals, updates only dirty cells, then builds a route from the
+start through every goal.
+
+`Model::solve` returns the same route without producing trace data. It uses
+staged BFS frontiers for general graphs and directly constructs a
+Manhattan-shortest route for a single-goal, fully open square grid, using
+cached neighbour-order preferences to resolve ties.
 
 The sections below describe the equivalent generated-transformer
 representation. `Model::new` does not generate or store these weights;
@@ -94,7 +100,7 @@ A cell gets its pointer in the loop in which the search first reaches it.
 The pointer goes to a neighbour that the search reached one loop before.
 Thus each pointer goes one BFS layer nearer to a goal.
 
-The solver starts at the start cell, follows the pointer chain to the nearest
+The trace starts at the start cell, follows the pointer chain to the nearest
 goal, then joins shortest paths to the remaining goals in nearest-unvisited
 order. It returns no route if any goal is unreachable.
 
@@ -109,7 +115,7 @@ order. It returns no route if any goal is unreachable.
 ## Skipped work
 
 The output of a token depends only on the token and its neighbours. If
-none of them changed in the last loop, the output is the same. Thus the
-solver evaluates only the tokens near a change. This does not change the
+none of them changed in the last loop, the output is the same. Thus
+`Model::trace` evaluates only tokens near a change. This does not change the
 result. It changes the time for each loop from the size of the maze to the
 size of the search front.

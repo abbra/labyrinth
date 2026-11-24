@@ -40,7 +40,8 @@ match Model::new().solve(&maze) {
 
 ## Get statistics
 
-`trace` does the same work as `solve`. It also returns a `Trace`:
+`trace` returns the same route as `solve`, along with fixed-rule flood
+statistics:
 
 | Field | Meaning |
 |-------|---------|
@@ -53,9 +54,11 @@ Use `reached_at` to show the search as an animation. The web UI does this.
 
 ## Execution
 
-The library evaluates dirty cells sequentially on the calling thread. The
-web server runs each solve on a blocking thread and allows at most two
-concurrent solves.
+`Model::solve` and `Model::trace` are sequential. `solve` uses staged BFS
+frontiers for general graphs and a direct cached-order Manhattan path for a
+single-goal, fully open square grid. `trace` always evaluates dirty cells in
+the fixed-rule loop. The web server runs each solve on a blocking thread and
+allows at most two concurrent solves.
 
 ## Panics
 

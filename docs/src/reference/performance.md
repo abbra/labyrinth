@@ -106,7 +106,10 @@ reported heap statistics.
 
 ## Time for one solve
 
-For a single goal, each loop advances the search frontier by one layer, so
-long narrow corridors need many loops with little work per loop. Open grids
-need fewer loops but process a wider frontier. Multi-goal routes can revisit
-cells while joining shortest-path legs.
+For the general BFS path, each frontier step advances one graph-distance
+layer. Long narrow corridors need many steps with little work per step; open
+grids have wider frontiers. `Model::trace` always runs the fixed-rule flood.
+`Model::solve` instead constructs a Manhattan-shortest path directly on a
+single-goal, fully open square grid, so the open-square `solve` timings above
+measure that shortcut. Multi-goal routes can revisit cells while joining
+shortest-path legs.
