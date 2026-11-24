@@ -76,7 +76,7 @@ impl Model {
                         let slot = maze
                             .neighbours(j)
                             .iter()
-                            .position(|&neighbour| x[neighbour] != 0 && x[neighbour] & PENDING == 0)
+                            .position(|&neighbour| x[neighbour] != 0 && x[neighbour] < PENDING)
                             .expect("a candidate has a reached neighbour");
                         x[j] = (slot + 1) as State | PENDING;
                         candidates.push(j);
