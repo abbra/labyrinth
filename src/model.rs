@@ -170,18 +170,41 @@ fn open_square_path(maze: &Maze, side: usize) -> Vec<usize> {
     let goal = maze.goal();
     let (goal_row, goal_col) = (goal / side, goal % side);
     let mut cell = maze.start();
-    let mut path = vec![cell];
+    let (mut row, mut col) = (cell / side, cell % side);
+    let distance = row.abs_diff(goal_row) + col.abs_diff(goal_col);
+    let mut path = Vec::with_capacity(distance + 1);
+    path.push(cell);
     while cell != goal {
-        let (row, col) = (cell / side, cell % side);
-        let distance = row.abs_diff(goal_row) + col.abs_diff(goal_col);
+        let vertical = if row < goal_row {
+            cell + side
+        } else if row > goal_row {
+            cell - side
+        } else {
+            usize::MAX
+        };
+        let horizontal = if col < goal_col {
+            cell + 1
+        } else if col > goal_col {
+            cell - 1
+        } else {
+            usize::MAX
+        };
         cell = *maze
             .neighbours(cell)
             .iter()
-            .find(|&&next| {
-                let (next_row, next_col) = (next / side, next % side);
-                next_row.abs_diff(goal_row) + next_col.abs_diff(goal_col) + 1 == distance
-            })
+            .find(|&&next| next == vertical || next == horizontal)
             .expect("an open square has a shortest-path neighbour");
+        if cell == vertical {
+            if row < goal_row {
+                row += 1;
+            } else {
+                row -= 1;
+            }
+        } else if col < goal_col {
+            col += 1;
+        } else {
+            col -= 1;
+        }
         path.push(cell);
     }
     path
