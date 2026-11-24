@@ -9,14 +9,15 @@ use labyrinth::Model;
 let model = Model::new();
 ```
 
-`Model::new` generates parameters deterministically from fixed solver rules.
-They do not depend on a maze. See [How the Model Works](../reference/model.md)
-for how the rules produce the weights.
+`Model::new` creates the fixed-rule solver. It does not build parameters from
+the maze or construct transformer weights. See
+[How the Model Works](../reference/model.md) for the equivalent transformer
+representation.
 Make one model and use it for all mazes. `Model` is `Clone`, `Send` and
 `Sync`. The web server shares one model between all requests.
 
-`model.parameter_count()` returns the number of weights. The value is
-1,472.
+`model.parameter_count()` returns the equivalent transformer's parameter
+count, including biases. The value is 1,472.
 
 ## Get the path
 
@@ -43,31 +44,22 @@ match Model::new().solve(&maze) {
 
 | Field | Meaning |
 |-------|---------|
-| `path` | The same value as `solve` |
-| `loops` | The number of times the transformer block ran |
-| `token_passes` | The number of token evaluations, for all loops. The solver skips tokens that cannot change |
-| `reached_at` | For each cell: the loop in which the search from the goals reached it, or `None` |
+| `loops` | The number of flood iterations |
 
-`loops` measures the multi-source transformer flood, not the length of the full
+`loops` measures the multi-source goal flood, not the length of the full
 multi-goal route. It stops when the start is reached or the flood makes no progress.
 
 Use `reached_at` to show the search as an animation. The web UI does this.
 
-## Threads
+## Execution
 
-`trace` starts one worker thread for each CPU. The threads stop before
-`trace` returns. A loop with fewer than 32 changed tokens runs on the
-calling thread only.
+The library evaluates dirty cells sequentially on the calling thread. The
+web server runs each solve on a blocking thread and allows at most two
+concurrent solves.
 
 ## Panics
 
-`solve` and `trace` panic in these conditions:
-
-- The chain of pointers from the start does not reach the first goal.
-
-Each condition is a defect in the weights. A correct model never panics.
-The panic message identifies the condition. See
+`solve` and `trace` panic if the solver fails to terminate or if a
+predecessor chain breaks while building the route. These indicate a solver
+bug, not a maze validation error. See
 [Error Messages](../reference/errors.md).
-
-A panic in a worker thread goes to the calling thread. It does not cause
-a hang.

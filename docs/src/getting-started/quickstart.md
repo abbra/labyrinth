@@ -18,11 +18,11 @@ assert_eq!(path, [0, 1, 4, 7, 8]);
 # Ok::<(), labyrinth::MazeError>(())
 ```
 
-The path is a list of cell ids. It starts at the start cell and ends at the
+The path is a list of cell ids. It starts at the start cell and ends at a
 goal cell. In a text maze, the id of row `r`, column `c` is
 `r * width + c`.
 
-`solve` returns `None` when no path exists.
+`solve` returns `None` when any goal is unreachable.
 
 ## Solve a maze from a file
 
@@ -43,7 +43,7 @@ cargo run -q --release --example solve < maze.txt
 
 2. Open <http://127.0.0.1:3000/> in a browser.
 3. Select a shape and a generator. Click **Generate maze**.
-4. Click **Run transformer**.
+4. Click **Run solver**.
 
 To use a different address, set `LABYRINTH_ADDR`:
 

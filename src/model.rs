@@ -1,9 +1,9 @@
-//! A looped solver compiled from the fixed-weight transformer's BFS rules.
+//! A fixed-rule breadth-first-search solver for maze graphs.
 //!
-//! Each maze cell is a token. The fused update copies reached state from the first
-//! reached neighbour and applies the transformer's boolean BFS rules directly. It floods
-//! outward from all goals, storing a pointer to the neighbour that first reached each
-//! cell. The solver then joins shortest paths to any remaining goals.
+//! Each cell is one token in the equivalent transformer representation. At runtime,
+//! the solver applies boolean BFS rules directly to dirty cells. It floods outward
+//! from all goals, storing a pointer to the neighbour that first reached each cell.
+//! The solver then joins shortest paths to any remaining goals.
 //!
 //! The equivalent graph transformer uses structural attention: each head selects one
 //! neighbour slot, with a sink for missing slots. Fixed weights therefore work for any
@@ -15,7 +15,7 @@ use crate::maze::{Cell, MAX_DEGREE as K, Maze};
 const MODEL_D: usize = 4 + 2 * K;
 type State = u8;
 
-/// The compiled maze-solving transformer.
+/// The fixed-rule maze-solving model.
 ///
 /// The update rules are fixed and independent of the maze.
 ///
@@ -56,7 +56,7 @@ impl Model {
     ///
     /// # Panics
     ///
-    /// Panics if the model fails to terminate, which would be a bug in the weights.
+    /// Panics if the model fails to terminate, which would indicate a bug in the solver rules.
     pub fn solve(&self, maze: &Maze) -> Option<Vec<usize>> {
         self.trace(maze).path
     }
@@ -65,7 +65,7 @@ impl Model {
     ///
     /// # Panics
     ///
-    /// Panics if the model fails to terminate, which would be a bug in the weights.
+    /// Panics if the model fails to terminate, which would indicate a bug in the solver rules.
     pub fn trace(&self, maze: &Maze) -> Trace {
         let mut x = embed(maze);
         let n = maze.cells().len();
@@ -113,7 +113,7 @@ impl Model {
         }
     }
 
-    /// Applies one transformer's boolean BFS update to a cell.
+    /// Applies one fixed-rule BFS update to a cell.
     fn block(&self, i: usize, x: &[State], maze: &Maze) -> State {
         let cell = maze.cells()[i];
         if cell == Cell::Goal {

@@ -1,6 +1,8 @@
 # HTTP API
 
-All bodies are JSON. All errors have status `400` and a plain-text body.
+Handler validation errors return status `400` with a plain-text body. Axum
+rejects malformed JSON and invalid enum values, such as an unknown shape or
+algorithm, with status `422`.
 
 | Method | Path | Purpose |
 |--------|------|---------|
@@ -68,7 +70,7 @@ Response:
 |-------|---------|
 | `path` | The cell ids from start through every goal, or `null` if any goal is unreachable |
 | `reached_at` | For each cell: the loop in which the search reached it, or `null` |
-| `loops` | The number of times the transformer block ran |
+| `loops` | Solver loop iterations until the start is reached or the flood stops |
 | `tokens` | The number of tokens. This is one token for each cell |
 | `token_passes` | The number of token evaluations, for all loops |
 | `open_cells` | The number of cells that are not walls |
@@ -88,7 +90,6 @@ Response:
 | No start, or two starts | `invalid maze: maze needs exactly one start` |
 | No goal | `invalid maze: maze needs at least one goal` |
 
-An unknown `shape` or `algorithm` gives a status from axum (`422`).
 
 ## Example
 

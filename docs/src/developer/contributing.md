@@ -11,8 +11,8 @@ cargo build --release --workspace
 - `cargo fmt --all` sets the format.
 - `cargo clippy --workspace --all-targets -- -D warnings` must pass with
   no warnings.
-- Keep weight construction deterministic and based on the solver rules. Do
-  not train maze-specific weights.
+- Keep the solver rules deterministic and independent of maze-specific training.
+  Update the equivalent-transformer documentation if those rules change.
 
 ## Before you send a change
 

@@ -1,10 +1,9 @@
-//! Maze solving by a transformer whose weights are generated from fixed BFS rules.
+//! Maze solving with a fixed-rule model compiled from breadth-first search.
 //!
-//! [`Model`] is a looped transformer: one attention + MLP block applied until the
-//! residual stream reaches a fixed point. Its weights encode breadth-first search, so
-//! the same weights find the shortest path in any [`Maze`]: a graph of cells from any
-//! tiling (squares, hexagons, triangles, Penrose rhombs, ...) with at most
-//! [`MAX_DEGREE`] neighbours per cell.
+//! [`Model`] applies the rules directly to maze cells. The equivalent looped
+//! transformer has a fixed parameter count, reported by
+//! [`Model::parameter_count`]. The same rules solve any [`Maze`] graph with at
+//! most [`MAX_DEGREE`] neighbours per cell.
 
 mod maze;
 mod model;

@@ -66,6 +66,5 @@ after a few steps.
 
 ### Start and goal
 
-The generator puts the start at the open cell that is nearest to the
-top-left corner. It puts the goal at the open cell that is nearest to the
-bottom-right corner.
+The generator chooses the start and goal from the open cells at opposite
+extremes of the positional score `x + y` (low for start, high for goal).

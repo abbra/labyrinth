@@ -16,6 +16,7 @@ cargo test -q --release --workspace
 | `matches_bfs_on_hex_triangle_and_irregular_mazes` | The same checks on hex, triangle and random graphs |
 | `walls_stay_walls_at_max_degree` | A wall with 8 reached neighbours does not become reached |
 | `long_corridor_maze` | Many loops on a long corridor |
+| `visits_every_goal_and_fails_if_any_goal_is_unreachable` | Visits every goal and returns `None` when a goal is unreachable |
 
 The doctest in `src/model.rs` also runs. The Rust examples in this book do
 not run with `cargo test`. See [Check the book examples](#check-the-book-examples).

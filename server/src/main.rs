@@ -1,4 +1,4 @@
-//! Web front end for a maze-solving transformer with rule-generated weights.
+//! Web front end for the fixed-rule maze solver.
 //!
 //! `GET /` serves the single-page UI, `POST /api/generate` builds a maze and
 //! `POST /api/solve` runs the model and returns the path plus execution statistics.
@@ -23,7 +23,7 @@ use tokio::sync::Semaphore;
 
 /// Smallest side the carving generators can fit separate start and goal rooms into.
 const MIN_SIDE: usize = 5;
-/// Largest side accepted; a 321×321 maze of any shape solves in about 0.3 s on 24 cores.
+/// Largest side accepted; bounds board size and per-request resource use.
 const MAX_SIDE: usize = 321;
 
 /// Bounds concurrent model runs to limit CPU oversubscription.
@@ -140,7 +140,7 @@ struct SolveResponse {
     path: Option<Vec<usize>>,
     /// Loop index at which the flood from all goals reached each cell.
     reached_at: Vec<Option<usize>>,
-    /// Transformer block applications until the start was reached or the flood stopped.
+    /// Solver loop iterations until the start is reached or the flood stops.
     loops: usize,
     /// Tokens in the sequence: one per cell.
     tokens: usize,

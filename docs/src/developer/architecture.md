@@ -16,7 +16,7 @@ graph LR
 |------|---------|
 | `src/lib.rs` | Public exports |
 | `src/maze.rs` | `Maze`, `Cell`, `MazeError`, `MAX_DEGREE`, text parser |
-| `src/model.rs` | `Model`, `Trace`, the weights, the solver loop, the thread pool |
+| `src/model.rs` | `Model`, `Trace`, the fixed-rule solver loop |
 
 The library has no geometry. A maze is cells plus edges. The neighbour
 lists use compressed sparse row (CSR) storage: one `offsets` array and one
@@ -26,24 +26,17 @@ lists use compressed sparse row (CSR) storage: one `offsets` array and one
 
 ```mermaid
 sequenceDiagram
-    participant C as Caller thread
-    participant W as Worker threads
-    C->>C: embed cells, mark all tokens dirty
-    loop until start reached or no dirty tokens
-        C->>W: start barrier (only if 32 or more dirty tokens)
-        par
-            C->>C: claim 8 dirty tokens, run block
-            W->>W: claim 8 dirty tokens, run block
-        end
-        W->>C: end barrier
-        C->>C: write changed tokens, mark them and their neighbours dirty
+    participant C as Calling thread
+    C->>C: initialize cell state and mark all cells dirty
+    loop until start reached or no dirty cells
+        C->>C: apply BFS rules to dirty cells
+        C->>C: write changed state and mark those cells and neighbours dirty
     end
-    C->>C: follow PTR from start to goal
+    C->>C: build route through every goal
 ```
 
-- The workers live for one `trace` call. A `Shutdown` guard releases
-  them on all exits, including a panic.
-- A worker panic is stored and raised again on the caller thread.
+The library solver is sequential. It evaluates only dirty cells; it does
+not create worker threads or materialize transformer weights.
 
 ## labyrinth-server
 
@@ -93,9 +86,9 @@ process-wide, so overlapping solves can affect each other's heap statistics.
 
 | Decision | Reason |
 |----------|--------|
-| One looped block | The same weights work for all maze sizes |
-| Attention bias from neighbour slots | The same weights work for all tilings |
-| MLP steps to exact 0/1 | Errors cannot grow from loop to loop |
-| Panic on no result | A wrong path is worse than a crash |
+| Shared fixed rules | Work for all maze sizes and supported tilings |
+| Neighbour-slot ordering | Resolves ties deterministically |
+| Discrete state updates | Avoid floating-point drift |
+| Panic on broken solver invariants | A wrong path is worse than a crash |
 | Geometry only in the server | The library stays small and general |
 | Pixel raster of cell ids in the UI | Drawing and clicks are fast on large boards |

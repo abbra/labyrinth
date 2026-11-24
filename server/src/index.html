@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Labyrinth · weight-programmed solver</title>
+<title>Labyrinth · fixed-rule maze solver</title>
 <style>
   :root, [data-theme="midnight"] {
     --bg: #0d1117; --panel: #161b22; --border: #30363d; --fg: #e6edf3; --muted: #8b949e;
@@ -121,7 +121,7 @@
 <body>
 <header>
   <h1>Laby<span>rinth</span></h1>
-  <div class="sub">A transformer with <b id="hdr-params">…</b> parameters generated from solver rules.</div>
+  <div class="sub">Equivalent transformer: <b id="hdr-params">…</b> parameters.</div>
   <div class="spacer"></div>
   <label style="margin:0;min-width:150px">Theme
     <select id="theme">
@@ -182,7 +182,7 @@
 
     <div class="card">
       <h2>Solve</h2>
-      <button class="primary" id="solve">Run transformer</button>
+      <button class="primary" id="solve">Run solver</button>
       <div style="height:10px"></div>
       <label class="check"><input type="checkbox" id="show-flood" checked> Show goal flood-fill</label>
       <label class="check"><input type="checkbox" id="animate" checked> Animate loops</label>
@@ -224,7 +224,7 @@
         <div class="stat"><div class="k">Loops</div><div class="v" id="r-loops">–</div></div>
         <div class="stat"><div class="k">Wall time</div><div class="v" id="r-time">–</div></div>
         <div class="stat"><div class="k">Tokens</div><div class="v" id="r-tokens">–</div></div>
-        <div class="stat"><div class="k">Weights</div><div class="v" id="r-params">–</div></div>
+        <div class="stat"><div class="k">Equivalent params</div><div class="v" id="r-params">–</div></div>
         <div class="stat"><div class="k">Token passes</div><div class="v" id="r-passes">–</div></div>
         <div class="stat"><div class="k">Per loop</div><div class="v" id="r-perloop">–</div></div>
         <div class="stat"><div class="k">Heap allocs</div><div class="v" id="r-allocs">–</div></div>
@@ -455,7 +455,7 @@ async function generate() {
     ({ shape, width: W, height: H } = req);
     load(res);
     clearRun(); mazeStats(); draw();
-    setStatus("Maze ready. Edit it or run the transformer.");
+    setStatus("Maze ready. Edit it or run the solver.");
   } catch (e) { showError(e.message); }
 }
 
@@ -463,7 +463,7 @@ async function solve() {
   if (!cells.length) return;
   showError("");
   const btn = $("solve"); btn.disabled = true;
-  setStatus("Transformer looping to a fixed point…", "busy");
+  setStatus("Solver flooding outward from all goals…", "busy");
   try {
     const res = await api("/api/solve", { shape, width: W, height: H, cells: cells.join("") });
     solution = res; runStats(res);

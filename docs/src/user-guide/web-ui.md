@@ -27,7 +27,7 @@ dart, which is concave.
 
 ## Solve a maze
 
-Click **Run transformer** or push `Enter`. The server-backed UI sends the maze
+Click **Run solver** or push `Enter`. The server-backed UI sends the maze
 to the server; the browser-only variant solves it in WebAssembly. Both show the
 path and the search statistics.
 

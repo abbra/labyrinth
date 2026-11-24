@@ -4,7 +4,7 @@
 use std::fmt;
 use std::str::FromStr;
 
-/// Most neighbours a cell may have; the model has one attention head per neighbour slot.
+/// Maximum neighbours supported by the solver's fixed rules.
 pub const MAX_DEGREE: usize = 8;
 
 /// One maze cell.

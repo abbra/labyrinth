@@ -33,15 +33,16 @@ The server has no other settings.
 | Limit | Value | Reason |
 |-------|-------|--------|
 | Smallest side | 5 | The square generators need space for separate start and goal rooms |
-| Largest side | 321 | A 321×321 maze solves in about 0.3 s on 24 cores |
+| Largest side | 321 | Bounds board size and per-request resource use |
 
 The server rejects a request with a side out of these limits. It sends
 status `400`.
 
-## Threads
+## Execution
 
-The model uses all CPUs. The server runs each solve on a blocking thread.
-Thus a long solve does not stop other requests.
+The solver itself is sequential. The server runs each solve on a blocking
+thread, with at most two solves in flight, so a solve does not block the
+async runtime.
 
 ## More information
 

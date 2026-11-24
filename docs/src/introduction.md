@@ -1,27 +1,27 @@
 # Introduction
 
-**Labyrinth** finds paths through a maze with a transformer. The model is not
-trained on examples. `Model::new` generates its parameters from fixed solver
-rules: attention heads copy reached-neighbour state, and MLP units implement
-the BFS update rules. The generated parameters are the same for every maze.
+**Labyrinth** finds paths through mazes with fixed breadth-first-search rules.
+`Model::new` creates a zero-sized solver; it does not construct transformer
+weights. The solver applies the rules directly to maze cells.
 
-This is weight-space programming: the rules are encoded in the transformer's
-weights, then run through attention, an MLP and a residual stream.
+The solver is equivalent to a looped transformer with 1,472 fixed parameters.
+`parameter_count()` reports that equivalent parameter count; the runtime does
+not execute attention, an MLP or a residual stream.
 
 ## What the model does
 
-- It accepts a maze of any size.
-- It accepts any tiling: squares, hexagons, triangles, Penrose rhombs,
-  Penrose kites and darts. The limit is 8 neighbours per cell.
-- It visits every goal, connecting each leg with a shortest path.
+- It accepts mazes of any size that fit in memory.
+- It accepts any tiling with at most 8 neighbours per cell: squares, hexagons,
+  triangles, Penrose rhombs, kites and darts.
+- It visits every goal, joining goals with shortest-path legs.
 - It returns no route when any goal is unreachable.
-- It uses the same 1,472 weights for all mazes.
+- Its equivalent transformer has the same 1,472 parameters for every maze.
 
 ## Crates
 
 | Crate | Purpose |
 |-------|---------|
-| **labyrinth** | Library. Maze graph, the rule-generated model, the solver loop |
+| **labyrinth** | Library. Maze graph, fixed-rule solver and solver loop |
 | **labyrinth-server** | Web server. Board shapes, maze generators, HTTP API, browser UI |
 | **labyrinth-wasm** | Browser bindings. Local generation and solving for the WASM demo |
 
@@ -30,13 +30,13 @@ WASM bindings use wasm-bindgen and serde.
 
 ## Design goals
 
-1. **Correctness.** Each leg is shortest; the full route visits all goals. Tests
-   compare single-goal results with a reference BFS.
-2. **Fixed weights.** The weights do not change with the maze size or the
+1. **Correctness.** Each route leg is shortest; the full route visits all goals.
+   Tests compare single-goal results with a reference BFS.
+2. **Maze-independent rules.** The same rules work for every maze size and
    tiling.
-3. **Exact values.** Each loop ends with features that are exactly 0 or 1.
-   Small errors cannot grow from loop to loop.
-4. **Speed.** A 321×321 maze solves in about 0.3 s on 24 cores. See
+3. **Discrete state.** The runtime uses integer state, not floating-point
+   activations.
+4. **Speed.** The solver reevaluates only cells affected by changes. See
    [Performance Results](reference/performance.md).
 
 ## Background

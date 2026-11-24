@@ -19,9 +19,7 @@
 
 Row and column numbers start at 0.
 
-## Model panics
-
-These panics show a defect in the weights. Report them as bugs.
+These panics indicate a solver invariant failed. Report them as bugs.
 
 | Message | Cause |
 |---------|-------|
