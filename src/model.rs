@@ -59,11 +59,14 @@ struct Head {
     wo: Vector,
 }
 
-/// One ReLU unit: reads `input · x`, adds `relu(...) * output` to the residual.
+/// One ReLU unit with a sparse input and one output coordinate.
 #[derive(Debug, Clone)]
 struct Unit {
     input: Vector,
-    output: Vector,
+    indices: [u8; D],
+    len: u8,
+    target: usize,
+    weight: f32,
 }
 
 /// The compiled maze-solving transformer.
@@ -214,16 +217,20 @@ impl Model {
         // softmax leakage stays below the MLP's 0/1 thresholds, so copy that value directly.
         for (k, head) in self.heads.iter().enumerate() {
             if let Some(&j) = nbrs.get(k) {
-                t[NBR_REACHED + k] =
-                    x[j][REACHED] * head.wv[REACHED] * head.wo[NBR_REACHED + k];
+                if head.bias[k] > head.bias[SINK] {
+                    t[NBR_REACHED + k] =
+                        x[j][REACHED] * head.wv[REACHED] * head.wo[NBR_REACHED + k];
+                }
             }
         }
         let mut out = [0.0; D];
         for unit in &self.mlp {
-            let a = dot(&unit.input, &t).max(0.0);
-            out.iter_mut()
-                .zip(&unit.output)
-                .for_each(|(o, w)| *o += a * w);
+            let a = unit.indices[..unit.len as usize]
+                .iter()
+                .map(|&i| unit.input[i as usize] * t[i as usize])
+                .sum::<f32>()
+                .max(0.0);
+            out[unit.target] += a * unit.weight;
         }
         t.iter_mut().zip(&out).for_each(|(a, b)| *a += b);
         t
@@ -358,9 +365,7 @@ fn mlp() -> Vec<Unit> {
                 input[i] = STEEP * wt;
             }
             input[ONE] += STEEP * (bias - 0.5) + offset;
-            let mut output = [0.0; D];
-            output[target] = sign;
-            units.push(Unit { input, output });
+            units.push(unit(input, target, sign));
         }
     };
     // reached ← goal ∨ (open ∧ ∃ reached neighbour); `big` outweighs all K neighbours of a wall.
@@ -384,12 +389,29 @@ fn mlp() -> Vec<Unit> {
     }
     // REACHED is overwritten, so it subtracts its old value; attention scratch is cleared.
     for i in [REACHED].into_iter().chain(NBR_REACHED..D) {
-        let (mut input, mut output) = ([0.0; D], [0.0; D]);
+        let mut input = [0.0; D];
         input[i] = 1.0;
-        output[i] = -1.0;
-        units.push(Unit { input, output });
+        units.push(unit(input, i, -1.0));
     }
     units
+}
+
+fn unit(input: Vector, target: usize, weight: f32) -> Unit {
+    let mut indices = [0; D];
+    let mut len = 0;
+    for (i, &value) in input.iter().enumerate() {
+        if value != 0.0 {
+            indices[len] = i as u8;
+            len += 1;
+        }
+    }
+    Unit {
+        input,
+        indices,
+        len: len as u8,
+        target,
+        weight,
+    }
 }
 
 /// Worker threads that live for one [`Model::trace`] and evaluate the dirty tokens of
