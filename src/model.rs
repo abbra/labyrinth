@@ -7,22 +7,17 @@
 //!
 //! The equivalent graph transformer uses structural attention: each head selects one
 //! neighbour slot, with a sink for missing slots. Fixed weights therefore work for any
-//! maze size and any tiling with at most [`MAX_DEGREE`] neighbours per cell.
-
+//! maze size and any tiling with at most [`crate::maze::MAX_DEGREE`] neighbours per cell.
 use std::collections::VecDeque;
 
 use crate::maze::{Cell, MAX_DEGREE as K, Maze};
 
-const REACHED: usize = 0;
-const PTR: usize = 1;
-const D: usize = PTR + K;
 const MODEL_D: usize = 4 + 2 * K;
-
-type Vector = [f32; D];
+type State = u8;
 
 /// The compiled maze-solving transformer.
 ///
-/// The weights are fixed at construction and independent of the maze.
+/// The update rules are fixed and independent of the maze.
 ///
 /// # Examples
 ///
@@ -82,7 +77,7 @@ impl Model {
         let (start, max_loops) = (maze.start(), n + 1);
         let (mut loops, mut token_passes) = (0, 0);
         loop {
-            if x[start][REACHED] == 1.0 || dirty.is_empty() {
+            if x[start] != 0 || dirty.is_empty() {
                 break;
             }
             loops += 1;
@@ -120,20 +115,18 @@ impl Model {
     }
 
     /// Applies one transformer's boolean BFS update to a cell.
-    fn block(&self, i: usize, x: &[Vector], maze: &Maze) -> Vector {
-        let mut token = x[i];
+    fn block(&self, i: usize, x: &[State], maze: &Maze) -> State {
         let cell = maze.cells()[i];
-        let first = maze
-            .neighbours(i)
-            .iter()
-            .position(|&j| x[j][REACHED] == 1.0);
-        if cell != Cell::Wall && cell != Cell::Goal && token[REACHED] == 0.0 {
-            if let Some(slot) = first {
-                token[PTR + slot] = 1.0;
-            }
+        if cell == Cell::Goal {
+            return (K + 1) as State;
         }
-        token[REACHED] = f32::from(cell == Cell::Goal || (cell != Cell::Wall && first.is_some()));
-        token
+        if cell == Cell::Wall || x[i] != 0 {
+            return x[i];
+        }
+        maze.neighbours(i)
+            .iter()
+            .position(|&j| x[j] != 0)
+            .map_or(0, |slot| slot as State + 1)
     }
 }
 
@@ -153,16 +146,18 @@ pub struct Trace {
 }
 
 /// Follows the first goal's pointer chain, then routes through any remaining goals.
-fn read_path(maze: &Maze, x: &[Vector]) -> Option<Vec<usize>> {
+fn read_path(maze: &Maze, x: &[State]) -> Option<Vec<usize>> {
     let mut cell = maze.start();
-    if x[cell][REACHED] != 1.0 {
+    if x[cell] == 0 {
         return None;
     }
     if maze.goals().len() == 1 {
         let mut path = vec![cell];
         while cell != maze.goal() {
-            let slot = (0..K)
-                .find(|&k| x[cell][PTR + k] == 1.0)
+            let slot = x[cell]
+                .checked_sub(1)
+                .map(usize::from)
+                .filter(|&slot| slot < K)
                 .unwrap_or_else(|| panic!("pointer chain broke off after {path:?}"));
             cell = maze.neighbours(cell)[slot];
             path.push(cell);
@@ -181,8 +176,10 @@ fn read_path(maze: &Maze, x: &[Vector]) -> Option<Vec<usize>> {
     let mut segment = Vec::with_capacity(n);
     let mut path = vec![cell];
     while !unvisited[cell] {
-        let slot = (0..K)
-            .find(|&k| x[cell][PTR + k] == 1.0)
+        let slot = x[cell]
+            .checked_sub(1)
+            .map(usize::from)
+            .filter(|&slot| slot < K)
             .unwrap_or_else(|| panic!("pointer chain broke off after {path:?}"));
         cell = maze.neighbours(cell)[slot];
         path.push(cell);
@@ -226,7 +223,7 @@ fn read_path(maze: &Maze, x: &[Vector]) -> Option<Vec<usize>> {
     Some(path)
 }
 
-/// Every cell starts with zero reached and pointer features.
-fn embed(maze: &Maze) -> Vec<Vector> {
-    vec![[0.0; D]; maze.cells().len()]
+/// Every cell starts unreached.
+fn embed(maze: &Maze) -> Vec<State> {
+    vec![0; maze.cells().len()]
 }
