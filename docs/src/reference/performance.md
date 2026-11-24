@@ -42,6 +42,24 @@ the counting allocator. The initial baseline was 158.17 ms; the current
 three-run median is 5.514 ms, a 28.7× speed-up. Both report 1,023 loops and
 1,048,571 token passes.
 
+### Model versus queue-based BFS
+
+`cargo run --release --example bfs_compare` times `Model::solve` against a
+single-goal BFS using `std::collections::VecDeque`, on the same open 512×512
+maze. It alternates solver order across nine runs and reports medians; path
+validation is outside the timed region. Both produce a valid shortest path of
+1,023 cells.
+
+| Solver | Median solve time (ms) |
+|--------|------------------------|
+| `Model::solve` | 6.695 |
+| Queue-based BFS | 3.747 |
+
+On this workload, the model solver took 1.79× as long as the conventional
+queue-based BFS. This is a direct measurement of the public solve calls, not
+the allocation-instrumented `Model::trace` timings above.
+
+
 ## Server: 321×321 boards
 
 Each board was generated once with the backtracker and seed 1, then solved
