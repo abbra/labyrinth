@@ -146,6 +146,15 @@ impl Model {
                 if (1..h - 1).contains(&r) && (1..w - 1).contains(&c) {
                     reached_at[(r - 1) * maze.width() + c - 1].get_or_insert(loops);
                 }
+                for row in r.saturating_sub(WINDOW)..(r + WINDOW + 1).min(h) {
+                    let first = row * w + c.saturating_sub(WINDOW);
+                    let span = &mut marked[first..row * w + (c + WINDOW + 1).min(w)];
+                    for (j, seen) in (first..).zip(span) {
+                        if !std::mem::replace(seen, true) {
+                            dirty.push(j);
+                        }
+                    }
+                }
             }
             dirty.iter().for_each(|&j| marked[j] = false);
         }
