@@ -1,0 +1,60 @@
+# Web UI
+
+Open the server address in a browser. The default is
+<http://127.0.0.1:3000/>.
+
+## Make a maze
+
+1. Select a shape in **Shape**.
+2. Select a generator in **Algorithm**.
+3. Set **Width** and **Height**. The range is 5 to 321.
+4. Set **Seed**, or click the dice button to get a random seed.
+5. Click **Generate maze**.
+
+## Edit a maze
+
+Select a tool (**Wall**, **Start** or **Goal**), or push its key. Then click a cell or drag over cells.
+
+| Key | Tool | Result |
+|-----|------|--------|
+| `w` | Wall | Toggles the cell between wall and open |
+| `s` | Start | Moves the start to the cell |
+| `g` | Goal | Moves the goal to the cell |
+
+Clicks go to the correct cell for all shapes. This includes the notch of a
+dart, which is concave.
+
+## Solve a maze
+
+Click **Run transformer** or push `Enter`. The UI sends the maze to the server. It
+then shows the path and the statistics.
+
+| Option | Result |
+|--------|--------|
+| **Show goal flood-fill** | Colours each cell by the loop in which the search reached it |
+| **Animate loops** | Shows the search loop by loop, then the path |
+
+## Statistics
+
+The statistics panel shows the values from
+[POST /api/solve](http-api.md#post-apisolve): loops, tokens, token passes,
+reached cells, path length and time.
+
+## How the UI draws a maze
+
+The UI draws one image for the full board. It does not draw each cell as
+a separate shape. This keeps large boards fast.
+
+1. The UI makes a raster. Each pixel of the raster holds the id of the cell
+   that covers it.
+2. To fill one row of pixels for a cell, the UI finds all points where the
+   row crosses the cell outline. It sorts the points. It fills the pixels
+   between the first and second point, the third and fourth point, and so
+   on. This even-odd rule is correct for convex and concave cells.
+3. The UI keeps the raster until the board or the canvas size changes.
+4. To draw, the UI writes one colour for each pixel from the cell state.
+5. To find the cell under the mouse, the UI reads the raster at the mouse
+   position.
+
+A 321×321 kite-and-dart board makes its raster in about 70 ms. Each later
+redraw takes about 5 ms.
