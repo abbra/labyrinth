@@ -10,35 +10,36 @@ vary with system load.
 
 These mazes use the deterministic square backtracker in
 `server/src/generate.rs`, seed 1. Values are medians of five separate
-release-mode `bench` runs; times are printed to 1 ms precision.
+release-mode `bench` runs; times are in ms to 0.001 ms.
 
-| Side | Cells | Loops | Path length | Time | Allocations | Peak heap | Peak per token |
-|------|-------|-------|-------------|------|-------------|-----------|----------------|
-| 21 | 441 | 85 | 85 | 0.000 s | 6 | 0.0 MiB | 28 B |
-| 81 | 6,561 | 689 | 689 | 0.000 s | 6 | 0.2 MiB | 27 B |
-| 321 | 103,041 | 10,957 | 10,957 | 0.003 s | 6 | 2.7 MiB | 27 B |
-| 501 | 251,001 | 14,769 | 14,769 | 0.012 s | 6 | 6.3 MiB | 26 B |
-| 1001 | 1,002,001 | 75,009 | 75,009 | 0.049 s | 6 | 25.8 MiB | 27 B |
+| Side | Cells | Loops | Path length | Time (ms) | Allocations | Peak heap | Peak per token |
+|------|-------|-------|-------------|-----------|-------------|-----------|----------------|
+| 21 | 441 | 85 | 85 | 0.018 | 6 | 0.0 MiB | 28 B |
+| 81 | 6,561 | 689 | 689 | 0.220 | 6 | 0.2 MiB | 27 B |
+| 321 | 103,041 | 10,957 | 10,957 | 5.023 | 6 | 2.7 MiB | 27 B |
+| 501 | 251,001 | 14,769 | 14,769 | 9.413 | 6 | 6.3 MiB | 26 B |
+| 1001 | 1,002,001 | 75,009 | 75,009 | 47.939 | 6 | 25.8 MiB | 27 B |
 
 ### Open-square scaling
 
 These fully open square mazes run from the top-left start to the bottom-right
-goal. The table reports medians of five separate release-mode runs of the
-`bench` example. Its timer covers `Model::trace`; input parsing is outside the
-timed region. The example uses the same counting allocator as the server.
-The library itself has no dependencies and no allocator.
+goal. Values are medians of five separate release-mode runs of the `bench`
+example. Times are in ms to 0.001 ms. Timing covers the allocation-instrumented
+`Model::trace` call; input parsing is outside that region. The example uses
+the same counting allocator as the server. The library itself has no
+dependencies and no allocator.
 
-| Side | Cells | Loops | Path length | Time | Allocations | Peak heap |
-|------|-------|-------|-------------|------|-------------|-----------|
-| 64 | 4,096 | 127 | 127 | 0.000 s | 6 | 0.1 MiB |
-| 128 | 16,384 | 255 | 255 | 0.001 s | 6 | 0.4 MiB |
-| 256 | 65,536 | 511 | 511 | 0.002 s | 6 | 1.6 MiB |
-| 512 | 262,144 | 1,023 | 1,023 | 0.008 s | 6 | 6.5 MiB |
-| 1024 | 1,048,576 | 2,047 | 2,047 | 0.034 s | 6 | 26.0 MiB |
+| Side | Cells | Loops | Path length | Time (ms) | Allocations | Peak heap |
+|------|-------|-------|-------------|-----------|-------------|-----------|
+| 64 | 4,096 | 127 | 127 | 0.112 | 6 | 0.1 MiB |
+| 128 | 16,384 | 255 | 255 | 0.493 | 6 | 0.4 MiB |
+| 256 | 65,536 | 511 | 511 | 1.673 | 6 | 1.6 MiB |
+| 512 | 262,144 | 1,023 | 1,023 | 8.012 | 6 | 6.5 MiB |
+| 1024 | 1,048,576 | 2,047 | 2,047 | 32.831 | 6 | 26.0 MiB |
 
 The dedicated `autoresearch` example measures the same 512×512 maze without
 the counting allocator. The initial baseline was 158.17 ms; the current
-three-run median is 6.000 ms, a 26.4× speed-up. Both report 1,023 loops and
+three-run median is 5.514 ms, a 28.7× speed-up. Both report 1,023 loops and
 1,048,571 token passes.
 
 ## Server: 321×321 boards

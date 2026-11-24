@@ -17,10 +17,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let tokens = maze.cells().len();
     let start = Instant::now();
     let (trace, heap) = alloc::measure(|| model.trace(&maze));
-    let secs = start.elapsed().as_secs_f64();
+    let ms = start.elapsed().as_secs_f64() * 1000.0;
     let mib = |b: u64| b as f64 / f64::from(1 << 20);
     println!(
-        "tokens={tokens} loops={} path={} secs={secs:.3} allocs={} allocated={:.1}MiB peak={:.1}MiB peak/token={}B",
+        "tokens={tokens} loops={} path={} ms={ms:.3} allocs={} allocated={:.1}MiB peak={:.1}MiB peak/token={}B",
         trace.loops,
         trace.path.map_or(0, |p| p.len()),
         heap.allocs,
