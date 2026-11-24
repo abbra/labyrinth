@@ -259,31 +259,40 @@ function cellSize() {
   return Math.max(4, Math.floor(Math.min((box.width - 32) / w, Math.max(440, innerHeight - 260) / h)));
 }
 
-function mix(a, b, t) {
-  const p = c => [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16));
-  const [x, y] = [p(a), p(b)];
-  return `rgb(${x.map((v, i) => Math.round(v + (y[i] - v) * t)).join(",")})`;
-}
+const rgb = hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
+// One pixel per cell; drawImage scales it up, so a frame costs one typed-array pass.
+const cells = document.createElement("canvas"), cellsCtx = cells.getContext("2d");
 
 function draw() {
   if (!grid.length) return;
   const s = cellSize(), h = grid.length, w = grid[0].length;
   const dpr = devicePixelRatio || 1;
-  canvas.width = w * s * dpr; canvas.height = h * s * dpr;
-  canvas.style.width = `${w * s}px`; canvas.style.height = `${h * s}px`;
+  if (canvas.width !== w * s * dpr || canvas.height !== h * s * dpr) {
+    canvas.width = w * s * dpr; canvas.height = h * s * dpr;
+    canvas.style.width = `${w * s}px`; canvas.style.height = `${h * s}px`;
+  }
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   const c = Object.fromEntries(["--wall", "--open", "--path", "--start", "--goal", "--flood-a", "--flood-b"]
     .map(k => [k, color(k)]));
-  const flood = solution && $("show-flood").checked;
-  const maxLoop = solution ? Math.max(1, ...solution.reached_at.filter(v => v !== null)) : 1;
-  for (let r = 0; r < h; r++) for (let col = 0; col < w; col++) {
-    const ch = grid[r][col];
-    let fill = ch === "#" ? c["--wall"] : c["--open"];
-    const t = flood ? solution.reached_at[r * w + col] : null;
-    if (ch !== "#" && t !== null && t !== undefined && t <= frame) fill = mix(c["--flood-a"], c["--flood-b"], t / maxLoop);
-    ctx.fillStyle = fill;
-    ctx.fillRect(col * s, r * s, s, s);
+  const flood = solution && $("show-flood").checked ? solution.reached_at : null;
+  if (solution && solution.maxLoop === undefined)
+    solution.maxLoop = solution.reached_at.reduce((m, v) => v === null ? m : Math.max(m, v), 1);
+  const [wall, open, fa, fb] = ["--wall", "--open", "--flood-a", "--flood-b"].map(k => rgb(c[k]));
+  const ramp = Array.from({ length: 256 }, (_, k) => fa.map((v, i) => Math.round(v + (fb[i] - v) * k / 255)));
+  if (cells.width !== w || cells.height !== h) { cells.width = w; cells.height = h; }
+  const img = cellsCtx.createImageData(w, h), px = img.data;
+  for (let r = 0, i = 0; r < h; r++) {
+    const row = grid[r];
+    for (let col = 0; col < w; col++, i++) {
+      const t = flood && flood[i];
+      const [R, G, B] = row[col] === "#" ? wall
+        : t !== null && t !== undefined && t <= frame ? ramp[Math.round(255 * t / solution.maxLoop)] : open;
+      px[4 * i] = R; px[4 * i + 1] = G; px[4 * i + 2] = B; px[4 * i + 3] = 255;
+    }
   }
+  cellsCtx.putImageData(img, 0, 0);
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(cells, 0, 0, w * s, h * s);
   const path = solution?.path;
   if (path && frame >= solution.loops) {
     ctx.strokeStyle = c["--path"]; ctx.lineWidth = Math.max(2, s * 0.35);
