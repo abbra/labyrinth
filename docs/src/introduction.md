@@ -1,6 +1,6 @@
 # Introduction
 
-**Labyrinth** finds the shortest path through a maze with a transformer.
+**Labyrinth** finds paths through a maze with a transformer.
 Nobody trained this transformer. Each weight has a value that a person
 wrote by hand. The weights implement breadth-first search (BFS).
 
@@ -13,8 +13,8 @@ usual way: attention, MLP, residual stream.
 - It accepts a maze of any size.
 - It accepts any tiling: squares, hexagons, triangles, Penrose rhombs,
   Penrose kites and darts. The limit is 8 neighbours per cell.
-- It returns a shortest path from the start to the goal.
-- It returns no path when the goal is unreachable.
+- It visits every goal, connecting each leg with a shortest path.
+- It returns no route when any goal is unreachable.
 - It uses the same 1,472 weights for all mazes.
 
 ## Crates
@@ -30,8 +30,8 @@ WASM bindings use wasm-bindgen and serde.
 
 ## Design goals
 
-1. **Correctness.** The path is a shortest path. Tests compare each result
-   with a reference BFS.
+1. **Correctness.** Each leg is shortest; the full route visits all goals. Tests
+   compare single-goal results with a reference BFS.
 2. **Fixed weights.** The weights do not change with the maze size or the
    tiling.
 3. **Exact values.** Each loop ends with features that are exactly 0 or 1.

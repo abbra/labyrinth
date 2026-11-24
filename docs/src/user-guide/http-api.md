@@ -66,7 +66,7 @@ Response:
 
 | Field | Meaning |
 |-------|---------|
-| `path` | The cell ids from start to goal, or `null` if no path exists |
+| `path` | The cell ids from start through every goal, or `null` if any goal is unreachable |
 | `reached_at` | For each cell: the loop in which the search reached it, or `null` |
 | `loops` | The number of times the transformer block ran |
 | `tokens` | The number of tokens. This is one token for each cell |
@@ -86,7 +86,7 @@ Response:
 | Wrong number of cells | `invalid maze: board has 225 cells, got 224` |
 | Unknown character | `invalid maze: unexpected cell 'x'` |
 | No start, or two starts | `invalid maze: maze needs exactly one start` |
-| No goal, or two goals | `invalid maze: maze needs exactly one goal` |
+| No goal | `invalid maze: maze needs at least one goal` |
 
 An unknown `shape` or `algorithm` gives a status from axum (`422`).
 

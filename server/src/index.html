@@ -388,14 +388,15 @@ function draw() {
     ctx.stroke(); ctx.shadowBlur = 0;
   }
   for (const [ch, key, mark] of [["S", "--start", "circle"], ["G", "--goal", "diamond"]]) {
-    const i = cells.indexOf(ch);
-    if (i < 0) continue;
-    const [x, y] = at(i), rad = u * 0.42;
-    ctx.fillStyle = c[key]; ctx.shadowColor = c[key]; ctx.shadowBlur = u * 0.8;
-    ctx.beginPath();
-    if (mark === "circle") ctx.arc(x, y, rad, 0, Math.PI * 2);
-    else { ctx.moveTo(x, y - rad); ctx.lineTo(x + rad, y); ctx.lineTo(x, y + rad); ctx.lineTo(x - rad, y); }
-    ctx.fill(); ctx.shadowBlur = 0;
+    for (let i = 0; i < cells.length; i++) {
+      if (cells[i] !== ch) continue;
+      const [x, y] = at(i), rad = u * 0.42;
+      ctx.fillStyle = c[key]; ctx.shadowColor = c[key]; ctx.shadowBlur = u * 0.8;
+      ctx.beginPath();
+      if (mark === "circle") ctx.arc(x, y, rad, 0, Math.PI * 2);
+      else { ctx.moveTo(x, y - rad); ctx.lineTo(x + rad, y); ctx.lineTo(x, y + rad); ctx.lineTo(x - rad, y); }
+      ctx.fill(); ctx.shadowBlur = 0;
+    }
   }
 }
 
@@ -466,8 +467,7 @@ async function solve() {
   try {
     const res = await api("/api/solve", { shape, width: W, height: H, cells: cells.join("") });
     solution = res; runStats(res);
-    setStatus(res.path ? `Path found after ${fmt(res.loops)} loops.` : "Goal unreachable from start.",
-      res.path ? "ok" : "bad");
+    setStatus(res.path ? `Path found after ${fmt(res.loops)} loops.` : "At least one goal is unreachable from start.", res.path ? "ok" : "bad");
     await animate();
   } catch (e) { showError(e.message); }
   btn.disabled = false;
@@ -497,8 +497,10 @@ function cellAt(e) {
   return id < 0 ? null : id;
 }
 function place(ch, i) {
-  const old = cells.indexOf(ch);
-  if (old >= 0) cells[old] = ".";
+  if (ch === "S") {
+    const old = cells.indexOf(ch);
+    if (old >= 0) cells[old] = ".";
+  }
   cells[i] = ch;
 }
 function edit(e) {

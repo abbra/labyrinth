@@ -16,11 +16,11 @@ pub enum Cell {
     Open,
     /// Passable; where the path begins.
     Start,
-    /// Passable; where the path ends.
+    /// Passable; a cell the path must visit.
     Goal,
 }
 
-/// Cells numbered `0..n` plus which ones share a side, with exactly one start and one goal.
+/// Cells numbered `0..n` plus which ones share a side, with one start and one or more goals.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Maze {
     cells: Vec<Cell>,
@@ -28,7 +28,7 @@ pub struct Maze {
     offsets: Vec<usize>,
     targets: Vec<usize>,
     start: usize,
-    goal: usize,
+    goals: Vec<usize>,
 }
 
 impl Maze {
@@ -39,7 +39,7 @@ impl Maze {
     /// # Errors
     ///
     /// Rejects edges to unknown cells, self-loops, repeated edges, cells with more than
-    /// [`MAX_DEGREE`] neighbours and anything but exactly one start and one goal.
+    /// [`MAX_DEGREE`] neighbours, anything but exactly one start, and mazes with no goal.
     pub fn new(
         cells: Vec<Cell>,
         edges: impl IntoIterator<Item = (usize, usize)>,
@@ -85,13 +85,16 @@ impl Maze {
             }
         };
         let start = find(Cell::Start).ok_or(MazeError::Start)?;
-        let goal = find(Cell::Goal).ok_or(MazeError::Goal)?;
+        let goals: Vec<_> = (0..n).filter(|&i| cells[i] == Cell::Goal).collect();
+        if goals.is_empty() {
+            return Err(MazeError::Goal);
+        }
         Ok(Self {
             cells,
             offsets,
             targets,
             start,
-            goal,
+            goals,
         })
     }
 
@@ -114,9 +117,16 @@ impl Maze {
         self.start
     }
 
-    /// Id of the goal cell.
+    /// Ids of all goal cells, in cell order.
+    pub fn goals(&self) -> &[usize] {
+        &self.goals
+    }
+
+    /// Id of the first goal cell.
+    ///
+    /// For mazes with several goals, use [`Maze::goals`].
     pub fn goal(&self) -> usize {
-        self.goal
+        self.goals[0]
     }
 }
 
@@ -160,9 +170,9 @@ pub enum MazeError {
         /// The cell.
         cell: usize,
     },
-    /// Zero or several start cells.
+    /// Zero start cells, or more than one.
     Start,
-    /// Zero or several goal cells.
+    /// Zero goal cells.
     Goal,
 }
 
@@ -181,7 +191,7 @@ impl fmt::Display for MazeError {
                 write!(f, "cell {cell} has more than {MAX_DEGREE} neighbours")
             }
             Self::Start => f.write_str("maze needs exactly one start"),
-            Self::Goal => f.write_str("maze needs exactly one goal"),
+            Self::Goal => f.write_str("maze needs at least one goal"),
         }
     }
 }

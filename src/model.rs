@@ -1,11 +1,12 @@
 //! A looped transformer whose weights are written by hand, not trained.
 //!
 //! Every maze cell is one token. One block (attention with one head per neighbour slot +
-//! ReLU MLP) is applied repeatedly. It floods outward from the goal: a cell becomes
+//! ReLU MLP) is applied repeatedly. It floods outward from all goals: a cell becomes
 //! `REACHED` when a neighbour is reached, and in that loop stores `PTR[k]`, the slot of
 //! the neighbour that reached it first, so every pointer leads one BFS layer closer to
-//! the goal. Once the start is reached its pointer chain is final and is the shortest
-//! path; if the flood stops growing first, the goal is unreachable.
+//! a goal. Once the start is reached its pointer chain reaches the nearest goal. The
+//! solver then joins shortest paths to the remaining goals; if any is unreachable, no
+//! complete route exists.
 //!
 //! The maze is a graph, so attention uses a structural bias in the style of graph
 //! transformers: the score of key `j` for query `i` is a weight looked up by `j`'s slot in
@@ -15,6 +16,7 @@
 //! back to exact 0/1 values, so softmax leakage never accumulates across loops.
 
 use std::any::Any;
+use std::collections::VecDeque;
 use std::panic::{self, AssertUnwindSafe};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering::Relaxed};
 use std::sync::{Barrier, Mutex, PoisonError, RwLock};
@@ -103,11 +105,11 @@ impl Model {
         self.heads.len() * (K + 1 + 2 * D) + self.mlp.len() * 2 * D
     }
 
-    /// Returns the cell ids of a shortest path from start to goal, both inclusive, or `None` when the
-    /// goal is unreachable.
+    /// Returns a route from the start through every goal, or `None` when any goal is
+    /// unreachable from the route.
     ///
-    /// Loops are bounded by the start's distance from the goal (or the flood depth when
-    /// unreachable); each loop costs time proportional to the flood frontier.
+    /// For multiple goals, it visits the nearest unvisited goal next, using a shortest
+    /// path for each leg.
     ///
     /// # Panics
     ///
@@ -254,24 +256,80 @@ pub struct Trace {
     /// Token evaluations by the block, summed over all loops; tokens whose
     /// neighbourhood did not change are not re-evaluated.
     pub token_passes: usize,
-    /// Per cell id: the loop in which the flood fill from the goal reached it.
+    /// Per cell id: the loop in which the flood fill from the goals reached it.
     pub reached_at: Vec<Option<usize>>,
 }
 
-/// Follows `PTR` from a reached start to the goal.
+/// Follows the first goal's pointer chain, then routes through any remaining goals.
 fn read_path(maze: &Maze, x: &[Vector]) -> Option<Vec<usize>> {
     let mut cell = maze.start();
     if x[cell][REACHED] != 1.0 {
         return None;
     }
+    if maze.goals().len() == 1 {
+        let mut path = vec![cell];
+        while cell != maze.goal() {
+            let slot = (0..K)
+                .find(|&k| x[cell][PTR + k] == 1.0)
+                .unwrap_or_else(|| panic!("pointer chain broke off after {path:?}"));
+            cell = maze.neighbours(cell)[slot];
+            path.push(cell);
+        }
+        return Some(path);
+    }
+
+    let n = maze.cells().len();
+    let mut unvisited = vec![false; n];
+    for &goal in maze.goals() {
+        unvisited[goal] = true;
+    }
+    let mut remaining = maze.goals().len();
+    let mut previous = vec![usize::MAX; n];
+    let mut queue = VecDeque::with_capacity(n);
+    let mut segment = Vec::with_capacity(n);
     let mut path = vec![cell];
-    while cell != maze.goal() {
+    while !unvisited[cell] {
         let slot = (0..K)
             .find(|&k| x[cell][PTR + k] == 1.0)
             .unwrap_or_else(|| panic!("pointer chain broke off after {path:?}"));
-        // Pointers are only set from a present neighbour's REACHED.
         cell = maze.neighbours(cell)[slot];
         path.push(cell);
+    }
+    unvisited[cell] = false;
+    remaining -= 1;
+    while remaining > 0 {
+        cell = *path.last().unwrap();
+        previous.fill(usize::MAX);
+        previous[cell] = cell;
+        queue.clear();
+        queue.push_back(cell);
+        let mut target = None;
+        while let Some(at) = queue.pop_front() {
+            if unvisited[at] {
+                target = Some(at);
+                break;
+            }
+            for &next in maze.neighbours(at) {
+                if maze.cells()[next] != Cell::Wall && previous[next] == usize::MAX {
+                    previous[next] = at;
+                    queue.push_back(next);
+                }
+            }
+        }
+        let mut at = target?;
+        segment.clear();
+        segment.push(at);
+        while at != cell {
+            at = previous[at];
+            segment.push(at);
+        }
+        for &at in segment.iter().rev().skip(1) {
+            if unvisited[at] {
+                unvisited[at] = false;
+                remaining -= 1;
+            }
+            path.push(at);
+        }
     }
     Some(path)
 }

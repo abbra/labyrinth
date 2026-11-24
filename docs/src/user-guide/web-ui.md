@@ -20,7 +20,7 @@ Select a tool (**Wall**, **Start** or **Goal**), or push its key. Then click a c
 |-----|------|--------|
 | `w` | Wall | Toggles the cell between wall and open |
 | `s` | Start | Moves the start to the cell |
-| `g` | Goal | Moves the goal to the cell |
+| `g` | Goal | Adds a goal at the cell |
 
 Clicks go to the correct cell for all shapes. This includes the notch of a
 dart, which is concave.

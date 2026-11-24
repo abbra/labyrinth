@@ -215,3 +215,24 @@ S.#.......
         .expect("valid maze");
     assert!(check(&maze, "corridor"));
 }
+
+#[test]
+fn visits_every_goal_and_fails_if_any_goal_is_unreachable() {
+    let maze: Maze = "S.G.G".parse().expect("multiple goals are valid");
+    assert_eq!(maze.goals(), [2, 4]);
+    assert_eq!(Model::new().solve(&maze), Some(vec![0, 1, 2, 3, 4]));
+
+    let maze = Maze::new(
+        vec![Cell::Start, Cell::Goal, Cell::Open, Cell::Goal],
+        [(0, 1), (0, 2), (2, 3)],
+    )
+    .expect("valid connected maze");
+    assert_eq!(
+        Model::new().solve(&maze),
+        Some(vec![0, 1, 0, 2, 3]),
+        "the route may revisit the start to reach another goal"
+    );
+
+    let maze: Maze = "S.G#G".parse().expect("multiple goals are valid");
+    assert_eq!(Model::new().solve(&maze), None);
+}

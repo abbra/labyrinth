@@ -1,8 +1,7 @@
 # How the Model Works
 
 The model is a looped transformer. One block (attention and MLP) runs
-again and again on the same tokens. The weights implement BFS from the
-goal.
+again and again on the same tokens. The weights implement BFS from all goals.
 
 ## Tokens
 
@@ -13,7 +12,7 @@ the residual stream.
 |-------|------|---------|
 | 0 | `ONE` | Always 1. It acts as a bias input |
 | 1 | `OPEN` | 1 if the cell is not a wall |
-| 2 | `GOAL` | 1 if the cell is the goal |
+| 2 | `GOAL` | 1 if the cell is a goal |
 | 3 | `REACHED` | 1 if the search has reached the cell |
 | 4–11 | `PTR[k]` | 1 if neighbour `k` reached this cell first |
 | 12–19 | `NBR_REACHED[k]` | Scratch. Attention writes neighbour `k`'s `REACHED` here |
@@ -32,7 +31,7 @@ flowchart LR
 
 1. The block runs on all tokens.
 2. If the start has `REACHED = 1`, stop.
-3. If no token changed, stop. The goal is unreachable.
+3. If no token changed, stop. The goals are unreachable from the start.
 4. Else, go to step 1.
 
 ## Attention
@@ -68,7 +67,7 @@ The rules:
    A wall never becomes reached.
 2. **Pointer.** `PTR[d] ← 1` when all these are true:
    - the cell is open,
-   - the cell is not the goal,
+   - the cell is not a goal,
    - the cell was not reached before this loop,
    - `NBR_REACHED[d]` is 1,
    - `NBR_REACHED[e]` is 0 for each `e < d`.
@@ -81,10 +80,11 @@ The rules:
 
 A cell gets its pointer in the loop in which the search first reaches it.
 The pointer goes to a neighbour that the search reached one loop before.
-Thus each pointer goes one BFS layer nearer to the goal.
+Thus each pointer goes one BFS layer nearer to a goal.
 
-The solver starts at the start cell. It follows `PTR` until it gets to the
-goal. The result is a shortest path.
+The solver starts at the start cell, follows the pointer chain to the nearest
+goal, then joins shortest paths to the remaining goals in nearest-unvisited
+order. It returns no route if any goal is unreachable.
 
 ## Parameter count
 

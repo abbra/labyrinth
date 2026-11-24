@@ -11,7 +11,7 @@ works with any tiling.
 | `Wall` | `#` | You cannot go through this cell |
 | `Open` | `.` or space | You can go through this cell |
 | `Start` | `S` | The path starts here. Exactly one per maze |
-| `Goal` | `G` | The path ends here. Exactly one per maze |
+| `Goal` | `G` | A cell the path must visit. One or more per maze |
 
 ## Rules
 
@@ -21,7 +21,7 @@ A valid maze obeys these rules:
 - An edge does not join a cell to itself.
 - Each pair of cells has a maximum of one edge.
 - Each cell has a maximum of `MAX_DEGREE` (8) neighbours.
-- The maze has exactly one start and exactly one goal.
+- The maze has exactly one start and at least one goal.
 
 `Maze::new` and `str::parse` check these rules. They return a `MazeError`
 when a rule is broken. See [Error Messages](../reference/errors.md).
@@ -66,8 +66,7 @@ assert_eq!(Model::new().solve(&maze), Some(vec![0, 1, 2]));
 
 Each cell keeps its neighbours in the order that its edges appear. This
 order is important only for ties. When two neighbours are at the same
-distance from the goal, the path goes through the neighbour that comes
-first.
+distance from a goal, the path goes through the neighbour that comes first.
 
 ## Read a maze
 
@@ -76,4 +75,5 @@ first.
 | `cells()` | All cells, indexed by cell id |
 | `neighbours(id)` | The ids of the cells next to `id`. Panics if `id` is out of range |
 | `start()` | The id of the start cell |
-| `goal()` | The id of the goal cell |
+| `goals()` | The ids of all goal cells, in cell order |
+| `goal()` | The id of the first goal cell; use `goals()` when there are several |

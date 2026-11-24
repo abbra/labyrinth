@@ -15,7 +15,7 @@
 | `DuplicateEdge { edge }` | `edge {edge:?} appears twice` | Two edges join the same pair of cells |
 | `TooManyNeighbours { cell }` | `cell {cell} has more than 8 neighbours` | A cell has more than `MAX_DEGREE` edges |
 | `Start` | `maze needs exactly one start` | The maze has no start, or more than one |
-| `Goal` | `maze needs exactly one goal` | The maze has no goal, or more than one |
+| `Goal` | `maze needs at least one goal` | The maze has no goal |
 
 Row and column numbers start at 0.
 

@@ -136,9 +136,9 @@ struct SolveRequest {
 
 #[derive(Serialize)]
 struct SolveResponse {
-    /// Cell ids from start to goal, or `None` when the goal is unreachable.
+    /// Cell ids from start through every goal, or `None` when any goal is unreachable.
     path: Option<Vec<usize>>,
-    /// Loop index at which the goal flood reached each cell.
+    /// Loop index at which the flood from all goals reached each cell.
     reached_at: Vec<Option<usize>>,
     /// Transformer block applications until the start was reached or the flood stopped.
     loops: usize,
