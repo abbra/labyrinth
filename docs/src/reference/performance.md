@@ -1,8 +1,8 @@
 # Performance Results
 
-Measurements below were taken on 2026-11-24 on an x86-64 Linux workstation
-with 24 logical CPUs (AMD Ryzen AI 9 HX 370), using release builds. Timings
-vary with system load.
+Unless noted, measurements below were taken on 2026-11-24 on an x86-64 Linux
+workstation with 24 logical CPUs (AMD Ryzen AI 9 HX 370), using release builds.
+Timings vary with system load.
 
 ## Library benchmarks
 
@@ -53,21 +53,22 @@ heuristic.
 
 | Workload | Cells | `Model::solve` (ms) | Queue BFS (ms) | Bidirectional BFS (ms) | A* (ms) |
 |----------|------:|-------------------:|---------------:|-----------------------:|--------:|
-| Open square 64×64 | 4,096 | 0.041 | 0.037 | 0.044 | 0.163 |
-| Backtracker 64×64 | 4,096 | 0.026 | 0.019 | 0.022 | 0.028 |
-| Open square 128×128 | 16,384 | 0.163 | 0.118 | 0.143 | 0.641 |
-| Backtracker 128×128 | 16,384 | 0.146 | 0.166 | 0.117 | 0.253 |
-| Open square 256×256 | 65,536 | 0.511 | 0.591 | 0.584 | 2.704 |
-| Backtracker 256×256 | 65,536 | 0.777 | 0.530 | 0.497 | 0.680 |
-| Open square 512×512 | 262,144 | 3.563 | 4.042 | 4.933 | 12.372 |
-| Backtracker 512×512 | 262,144 | 3.956 | 0.930 | 1.198 | 1.202 |
-| Open square 1024×1024 | 1,048,576 | 15.419 | 22.837 | 20.089 | 40.297 |
-| Backtracker 1024×1024 | 1,048,576 | 25.649 | 16.654 | 16.999 | 23.913 |
+| Open square 64×64 | 4,096 | 0.000 | 0.025 | 0.029 | 0.107 |
+| Backtracker 64×64 | 4,096 | 0.022 | 0.011 | 0.012 | 0.019 |
+| Open square 128×128 | 16,384 | 0.000 | 0.115 | 0.134 | 0.593 |
+| Backtracker 128×128 | 16,384 | 0.133 | 0.164 | 0.116 | 0.256 |
+| Open square 256×256 | 65,536 | 0.001 | 0.633 | 0.592 | 2.717 |
+| Backtracker 256×256 | 65,536 | 0.779 | 0.529 | 0.515 | 0.742 |
+| Open square 512×512 | 262,144 | 0.001 | 3.770 | 4.356 | 12.287 |
+| Backtracker 512×512 | 262,144 | 3.942 | 0.981 | 1.240 | 1.268 |
+| Open square 1024×1024 | 1,048,576 | 0.002 | 22.181 | 20.784 | 41.497 |
+| Backtracker 1024×1024 | 1,048,576 | 24.376 | 16.928 | 17.840 | 23.708 |
 
-Values are medians of nine runs with solver order rotated. Every route's
-endpoints, traversable cells, edges, and shortest length are checked outside
-the timed region. These results cover these workloads only; timings vary with
-system load.
+The comparison sweep was rerun on 2026-11-25. Values are medians of nine
+runs with solver order rotated. Times are printed to 0.001 ms, so `0.000`
+indicates a time below 0.0005 ms. Every route's endpoints, traversable cells,
+edges, and shortest length are checked outside the timed region. These results
+cover these workloads only; timings vary with system load.
 
 ## Server: 321×321 boards
 
