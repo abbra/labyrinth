@@ -38,7 +38,7 @@ then shows the path and the statistics.
 
 The statistics panel shows the values from
 [POST /api/solve](http-api.md#post-apisolve): loops, tokens, token passes,
-reached cells, path length and time.
+reached cells, path length, time and heap use.
 
 ## How the UI draws a maze
 

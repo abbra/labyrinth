@@ -227,6 +227,10 @@
         <div class="stat"><div class="k">Weights</div><div class="v" id="r-params">–</div></div>
         <div class="stat"><div class="k">Token passes</div><div class="v" id="r-passes">–</div></div>
         <div class="stat"><div class="k">Per loop</div><div class="v" id="r-perloop">–</div></div>
+        <div class="stat"><div class="k">Heap allocs</div><div class="v" id="r-allocs">–</div></div>
+        <div class="stat"><div class="k">Heap allocated</div><div class="v" id="r-bytes">–</div></div>
+        <div class="stat"><div class="k">Heap peak</div><div class="v" id="r-peak">–</div></div>
+        <div class="stat"><div class="k">Peak per token</div><div class="v" id="r-pertoken">–</div></div>
         <div class="stat wide"><div class="k">Flood coverage <span id="r-reached"></span></div><div class="v" id="r-coverage">–</div><div class="bar"><i id="b-coverage"></i></div></div>
         <div class="stat wide"><div class="k">Path efficiency (path / open cells)</div><div class="v" id="r-eff">–</div><div class="bar"><i id="b-eff"></i></div></div>
       </div>
@@ -252,6 +256,7 @@ function setStatus(text, kind = "") { $("status").textContent = text; $("dot").c
 function showError(msg) { $("error").textContent = msg; if (msg) setStatus("Error", "bad"); }
 const fmt = n => n.toLocaleString();
 const fmtTime = us => us < 1000 ? `${us} µs` : us < 1e6 ? `${(us / 1000).toFixed(1)} ms` : `${(us / 1e6).toFixed(2)} s`;
+const fmtBytes = b => b < 1024 ? `${b} B` : b < 1 << 20 ? `${(b / 1024).toFixed(1)} KiB` : `${(b / (1 << 20)).toFixed(1)} MiB`;
 
 async function api(path, body) {
   const res = await fetch(path, body === undefined ? {} : {
@@ -395,7 +400,7 @@ function mazeStats() {
 }
 function clearRun() {
   solution = null;
-  for (const id of ["r-result", "r-path", "r-loops", "r-time", "r-tokens", "r-passes", "r-perloop", "r-coverage", "r-eff"])
+  for (const id of ["r-result", "r-path", "r-loops", "r-time", "r-tokens", "r-passes", "r-perloop", "r-allocs", "r-bytes", "r-peak", "r-pertoken", "r-coverage", "r-eff"])
     $(id).textContent = "–";
   $("r-reached").textContent = "";
   $("b-coverage").style.width = $("b-eff").style.width = "0";
@@ -412,6 +417,10 @@ function runStats(res) {
   $("r-params").textContent = fmt(params);
   $("r-passes").textContent = fmt(res.token_passes);
   $("r-perloop").textContent = fmtTime(Math.round(res.micros / Math.max(1, res.loops)));
+  $("r-allocs").textContent = fmt(res.heap.allocs);
+  $("r-bytes").textContent = fmtBytes(res.heap.bytes);
+  $("r-peak").textContent = fmtBytes(res.heap.peak);
+  $("r-pertoken").textContent = fmtBytes(Math.round(res.heap.peak / Math.max(1, res.tokens)));
   const cov = res.open_cells ? res.reached_cells / res.open_cells : 0;
   $("r-reached").textContent = `(${fmt(res.reached_cells)} / ${fmt(res.open_cells)})`;
   $("r-coverage").textContent = `${(100 * cov).toFixed(1)}%`;

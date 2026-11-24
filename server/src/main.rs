@@ -3,6 +3,7 @@
 //! `GET /` serves the single-page UI, `POST /api/generate` builds a maze and
 //! `POST /api/solve` runs the model and returns the path plus execution statistics.
 
+mod alloc;
 mod board;
 mod generate;
 
@@ -131,6 +132,8 @@ struct SolveResponse {
     open_cells: usize,
     reached_cells: usize,
     micros: u128,
+    /// Heap use of the solve, from the counting allocator.
+    heap: alloc::Usage,
 }
 
 async fn solve(
@@ -146,10 +149,12 @@ async fn solve(
     let tokens = board.len();
     let open_cells = req.cells.bytes().filter(|&b| b != b'#').count();
     // The model loop is CPU-bound and multi-threaded; keep it off the async workers.
-    let (trace, micros) = tokio::task::spawn_blocking(move || {
-        let started = Instant::now();
-        let trace = model.trace(&maze);
-        (trace, started.elapsed().as_micros())
+    let ((trace, micros), heap) = tokio::task::spawn_blocking(move || {
+        alloc::measure(|| {
+            let started = Instant::now();
+            let trace = model.trace(&maze);
+            (trace, started.elapsed().as_micros())
+        })
     })
     .await
     .expect("solver panicked");
@@ -162,5 +167,6 @@ async fn solve(
         tokens,
         open_cells,
         micros,
+        heap,
     }))
 }

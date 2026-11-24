@@ -74,6 +74,9 @@ Response:
 | `open_cells` | The number of cells that are not walls |
 | `reached_cells` | The number of cells that the search reached |
 | `micros` | The solve time in microseconds. It does not include HTTP or JSON time |
+| `heap.allocs` | The number of heap allocations during the solve |
+| `heap.bytes` | The number of heap bytes allocated during the solve |
+| `heap.peak` | The largest number of heap bytes live at one time during the solve, above the level at the start |
 
 ## Errors
 
