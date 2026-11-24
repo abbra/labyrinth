@@ -1,79 +1,83 @@
 # Performance Results
 
-All values come from one machine with 24 cores and release builds.
+Measurements below were taken on 2026-11-24 on an x86-64 Linux workstation
+with 24 logical CPUs (AMD Ryzen AI 9 HX 370), using release builds. Timings
+vary with system load.
 
-## Library: square mazes
+## Library benchmarks
 
-These mazes come from a square backtracker generator. To measure one maze,
-run the `bench` example. It solves the maze one time and prints the time
-and the heap use:
+### Square backtracker mazes
 
-```bash
-cargo run -q --release --example bench < maze.txt
-```
+These mazes use the deterministic square backtracker in
+`server/src/generate.rs`, seed 1. Values are medians of five separate
+release-mode `bench` runs; times are printed to 1 ms precision.
 
-The example uses the same counting allocator as the server. The library
-itself has no dependencies and no allocator.
+| Side | Cells | Loops | Path length | Time | Allocations | Peak heap | Peak per token |
+|------|-------|-------|-------------|------|-------------|-----------|----------------|
+| 21 | 441 | 85 | 85 | 0.000 s | 6 | 0.0 MiB | 28 B |
+| 81 | 6,561 | 689 | 689 | 0.000 s | 6 | 0.2 MiB | 27 B |
+| 321 | 103,041 | 10,957 | 10,957 | 0.003 s | 6 | 2.7 MiB | 27 B |
+| 501 | 251,001 | 14,769 | 14,769 | 0.012 s | 6 | 6.3 MiB | 26 B |
+| 1001 | 1,002,001 | 75,009 | 75,009 | 0.049 s | 6 | 25.8 MiB | 27 B |
 
-| Side | Tokens | Loops | Time | Allocations | Peak heap | Peak per token |
-|------|--------|-------|------|-------------|-----------|----------------|
-| 21 | 441 | 77 | 0.002 s | 99 | 0.1 MiB | 216 B |
-| 81 | 6,561 | 657 | 0.021 s | 108 | 1.3 MiB | 210 B |
-| 321 | 103,041 | 4,893 | 0.278 s | 108 | 21.0 MiB | 213 B |
-| 501 | 251,001 | 17,625 | 0.708 s | 108 | 57.8 MiB | 241 B |
-| 1001 | 1,002,001 | 67,073 | 2.818 s | 108 | 221.4 MiB | 231 B |
+### Open-square scaling
+
+These fully open square mazes run from the top-left start to the bottom-right
+goal. The table reports medians of five separate release-mode runs of the
+`bench` example. Its timer covers `Model::trace`; input parsing is outside the
+timed region. The example uses the same counting allocator as the server.
+The library itself has no dependencies and no allocator.
+
+| Side | Cells | Loops | Path length | Time | Allocations | Peak heap |
+|------|-------|-------|-------------|------|-------------|-----------|
+| 64 | 4,096 | 127 | 127 | 0.000 s | 6 | 0.1 MiB |
+| 128 | 16,384 | 255 | 255 | 0.001 s | 6 | 0.4 MiB |
+| 256 | 65,536 | 511 | 511 | 0.002 s | 6 | 1.6 MiB |
+| 512 | 262,144 | 1,023 | 1,023 | 0.008 s | 6 | 6.5 MiB |
+| 1024 | 1,048,576 | 2,047 | 2,047 | 0.034 s | 6 | 26.0 MiB |
+
+The dedicated `autoresearch` example measures the same 512×512 maze without
+the counting allocator. The initial baseline was 158.17 ms; the current
+three-run median is 6.000 ms, a 26.4× speed-up. Both report 1,023 loops and
+1,048,571 token passes.
 
 ## Server: 321×321 boards
 
-The server time is the `micros` value from
-[POST /api/solve](../user-guide/http-api.md#post-apisolve).
+Each board was generated once with the backtracker and seed 1, then solved
+five times through the API. Server time is the median `micros` value from
+[POST /api/solve](../user-guide/http-api.md#post-apisolve); it excludes HTTP
+and JSON processing.
 
-| Shape | Cells | Path length | Server time |
-|-------|-------|-------------|-------------|
-| Square | 103,041 | 10,957 | 291 ms |
-| Hexagon | 103,041 | 5,250 | 214 ms |
-| Triangle | 103,041 | 10,115 | 166 ms |
-| Penrose rhombs | 126,940 | 4,373 | 104 ms |
-| Kites and darts | 78,514 | — | 299 ms (6,841 loops) |
+| Shape | Cells | Path length | Median server time |
+|-------|-------|-------------|--------------------|
+| Square | 103,041 | 10,957 | 3.817 ms |
+| Hexagon | 103,041 | 5,250 | 1.917 ms |
+| Triangle | 103,041 | 10,115 | 1.461 ms |
+| Penrose rhombs | 126,940 | 4,373 | 2.101 ms |
+| Kites and darts | 78,514 | 6,841 | 1.973 ms |
 
 ## Memory use
 
-The server counts heap allocations during each solve. The values come from
-the `heap` object in [POST /api/solve](../user-guide/http-api.md#post-apisolve).
-The boards are 321×321 backtracker mazes, seed 1.
+The values below are medians of five solves of the same generated boards. The
+server reports allocation statistics in the `heap` object in
+[POST /api/solve](../user-guide/http-api.md#post-apisolve).
 
 | Shape | Tokens | Loops | Allocations | Allocated | Peak | Peak per token |
 |-------|--------|-------|-------------|-----------|------|----------------|
-| Square | 103,041 | 10,957 | 108 | 22.9 MiB | 22.8 MiB | 232 B |
-| Hexagon | 103,041 | 5,250 | 109 | 23.4 MiB | 23.3 MiB | 237 B |
-| Triangle | 103,041 | 10,115 | 109 | 22.8 MiB | 22.7 MiB | 231 B |
-| Penrose rhombs | 126,940 | 4,373 | 108 | 29.1 MiB | 29.0 MiB | 239 B |
-| Kites and darts | 78,514 | 6,841 | 108 | 18.3 MiB | 18.2 MiB | 243 B |
+| Square | 103,041 | 10,957 | 6 | 2.7 MiB | 2.7 MiB | 27 B |
+| Hexagon | 103,041 | 5,250 | 6 | 2.6 MiB | 2.6 MiB | 27 B |
+| Triangle | 103,041 | 10,115 | 6 | 2.7 MiB | 2.7 MiB | 27 B |
+| Penrose rhombs | 126,940 | 4,373 | 6 | 3.2 MiB | 3.2 MiB | 27 B |
+| Kites and darts | 78,514 | 6,841 | 6 | 2.0 MiB | 2.0 MiB | 27 B |
 
-The number of allocations does not change with the number of loops. The
-solver allocates its buffers one time and then uses them again in each
-loop. The peak is approximately 235 bytes for each token. Thus the memory
-use is linear in the number of cells.
-
-The counters are process-wide. Allocations by other requests that run at
-the same time are also counted.
-
-## Speed-ups over the first server version
-
-The first server version evaluated all tokens in each loop. The current
-version evaluates only the tokens near a change, stops early and uses a
-thread pool.
-
-| Side | Old | New | Speed-up |
-|------|-----|-----|----------|
-| 81 | 5.88 s | 0.179 s | 33× |
-| 121 | 53.7 s | 0.362 s | 148× |
-| 161 | 141 s | 0.652 s | 217× |
-| 241 | 268 s | 1.40 s | 191× |
+Allocation counts are independent of loop count: the solver allocates its
+working buffers once and reuses them. These measurements use sequential
+requests; the counters are process-wide, so concurrent solves can affect
+reported heap statistics.
 
 ## Time for one solve
 
-The number of loops is equal to the path length. The work in one loop is
-proportional to the size of the search front. Thus long, narrow corridors
-need many loops with little work in each loop. Open caves need few loops
-with more work in each loop.
+For a single goal, each loop advances the search frontier by one layer, so
+long narrow corridors need many loops with little work per loop. Open grids
+need fewer loops but process a wider frontier. Multi-goal routes can revisit
+cells while joining shortest-path legs.
