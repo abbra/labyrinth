@@ -11,8 +11,10 @@
 //! the same weights solve a maze of any size; the MLP snaps every update back to exact
 //! 0/1 values, so softmax leakage never accumulates across loops.
 
+use std::any::Any;
+use std::panic::{self, AssertUnwindSafe};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering::Relaxed};
-use std::sync::{Barrier, Mutex, RwLock};
+use std::sync::{Barrier, Mutex, PoisonError, RwLock};
 
 use crate::maze::{Cell, Maze, Pos};
 
@@ -139,6 +141,7 @@ impl Model {
             start: Barrier::new(threads),
             end: Barrier::new(threads),
             done: AtomicBool::new(false),
+            panic: Mutex::new(None),
         };
         let mut reached_at = vec![None; maze.width() * maze.height()];
         let (loops, token_passes) = std::thread::scope(|s| {
@@ -175,6 +178,9 @@ impl Model {
                     pool.end.wait();
                 } else {
                     pool.work(self, w, 0);
+                }
+                if let Some(payload) = pool.panic.lock().unwrap().take() {
+                    panic::resume_unwind(payload);
                 }
                 (x, dirty) = (pool.x.write().unwrap(), pool.dirty.write().unwrap());
                 for out in &pool.out {
@@ -392,6 +398,8 @@ struct Pool {
     start: Barrier,
     end: Barrier,
     done: AtomicBool,
+    /// First panic caught in `work` this loop, re-raised on the calling thread.
+    panic: Mutex<Option<Box<dyn Any + Send>>>,
 }
 
 impl Pool {
@@ -401,7 +409,17 @@ impl Pool {
         !self.done.load(Relaxed)
     }
 
+    /// Evaluates claimed tokens until none are left. Never unwinds: a panic is parked in
+    /// `panic` so every thread still reaches the `end` barrier instead of deadlocking it.
     fn work(&self, model: &Model, w: usize, id: usize) {
+        let run = || self.claim_all(model, w, id);
+        if let Err(payload) = panic::catch_unwind(AssertUnwindSafe(run)) {
+            let mut slot = self.panic.lock().unwrap_or_else(PoisonError::into_inner);
+            slot.get_or_insert(payload);
+        }
+    }
+
+    fn claim_all(&self, model: &Model, w: usize, id: usize) {
         let (x, dirty) = (self.x.read().unwrap(), self.dirty.read().unwrap());
         let mut out = self.out[id].lock().unwrap();
         loop {
