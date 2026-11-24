@@ -8,4 +8,4 @@ mod maze;
 mod model;
 
 pub use maze::{Cell, Maze, ParseMazeError, Pos};
-pub use model::Model;
+pub use model::{Model, Trace};

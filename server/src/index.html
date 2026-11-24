@@ -1,0 +1,449 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Labyrinth · weight-programmed solver</title>
+<style>
+  :root, [data-theme="midnight"] {
+    --bg: #0d1117; --panel: #161b22; --border: #30363d; --fg: #e6edf3; --muted: #8b949e;
+    --accent: #7c5cff; --wall: #2b3240; --open: #0f141b; --path: #ffd166;
+    --start: #2ee59d; --goal: #ff5c8a; --flood-a: #1f6feb; --flood-b: #a371f7;
+  }
+  [data-theme="daylight"] {
+    --bg: #f5f6fa; --panel: #ffffff; --border: #dde1ea; --fg: #1c2230; --muted: #667085;
+    --accent: #4f46e5; --wall: #2e3646; --open: #fbfcfe; --path: #f59e0b;
+    --start: #10b981; --goal: #e11d48; --flood-a: #bae6fd; --flood-b: #c4b5fd;
+  }
+  [data-theme="solarized"] {
+    --bg: #002b36; --panel: #073642; --border: #164f5c; --fg: #eee8d5; --muted: #93a1a1;
+    --accent: #b58900; --wall: #586e75; --open: #002b36; --path: #cb4b16;
+    --start: #859900; --goal: #d33682; --flood-a: #268bd2; --flood-b: #2aa198;
+  }
+  [data-theme="forest"] {
+    --bg: #10170f; --panel: #172216; --border: #2b3b29; --fg: #e3f0dc; --muted: #93a88c;
+    --accent: #8bd450; --wall: #3c5236; --open: #0c120b; --path: #f2c14e;
+    --start: #5ee6c4; --goal: #ff7b54; --flood-a: #2d6a4f; --flood-b: #95d5b2;
+  }
+  [data-theme="synthwave"] {
+    --bg: #1a1033; --panel: #241546; --border: #3d2a6b; --fg: #fbe9ff; --muted: #b59ad6;
+    --accent: #ff2e97; --wall: #07030f; --open: #140b28; --path: #fff35c;
+    --start: #00f0ff; --goal: #ff2e97; --flood-a: #5b2ea6; --flood-b: #ff7ad9;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; background: var(--bg); color: var(--fg);
+    font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    transition: background .25s, color .25s;
+  }
+  header {
+    display: flex; align-items: center; gap: 16px; padding: 14px 24px;
+    border-bottom: 1px solid var(--border); background: var(--panel);
+  }
+  header h1 { font-size: 18px; margin: 0; letter-spacing: .3px; }
+  header h1 span { color: var(--accent); }
+  header .sub { color: var(--muted); font-size: 13px; }
+  header .spacer { flex: 1; }
+  main {
+    display: grid; grid-template-columns: 290px 1fr 300px; gap: 18px; padding: 18px 24px;
+    align-items: start;
+  }
+  @media (max-width: 1100px) { main { grid-template-columns: 1fr; } }
+  .card {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+    padding: 16px; box-shadow: 0 6px 24px rgb(0 0 0 / .12);
+  }
+  .card + .card { margin-top: 14px; }
+  .card h2 {
+    font-size: 12px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--muted);
+    margin: 0 0 12px;
+  }
+  label { display: block; margin-bottom: 10px; color: var(--muted); font-size: 12px; }
+  label > span.val { float: right; color: var(--fg); font-variant-numeric: tabular-nums; }
+  select, input[type=number] {
+    width: 100%; margin-top: 4px; padding: 8px 10px; border-radius: 9px;
+    border: 1px solid var(--border); background: var(--bg); color: var(--fg); font: inherit;
+  }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  .row { display: flex; gap: 8px; }
+  .row > * { flex: 1; }
+  button {
+    width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border);
+    background: var(--bg); color: var(--fg); font: inherit; font-weight: 600; cursor: pointer;
+    transition: transform .08s, border-color .15s, background .15s;
+  }
+  button:hover { border-color: var(--accent); }
+  button:active { transform: scale(.98); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button:disabled { opacity: .55; cursor: progress; }
+  .seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .seg input { position: absolute; opacity: 0; pointer-events: none; }
+  .seg label {
+    margin: 0; padding: 8px 4px; text-align: center; border-radius: 9px; cursor: pointer;
+    border: 1px solid var(--border); color: var(--fg); font-size: 13px;
+  }
+  .seg input:checked + span { color: var(--accent); }
+  .seg label:has(input:checked) { border-color: var(--accent); background: var(--bg); }
+  .seg input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .check { display: flex; align-items: center; gap: 8px; color: var(--fg); font-size: 13px; }
+  .check input { accent-color: var(--accent); }
+  .stage { display: flex; flex-direction: column; gap: 12px; }
+  .board {
+    display: grid; place-items: center; min-height: 480px; padding: 16px;
+  }
+  canvas { max-width: 100%; border-radius: 10px; cursor: crosshair; touch-action: none; }
+  .status {
+    display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--muted);
+  }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); }
+  .dot.ok { background: var(--start); box-shadow: 0 0 10px var(--start); }
+  .dot.bad { background: var(--goal); box-shadow: 0 0 10px var(--goal); }
+  .dot.busy { background: var(--accent); animation: pulse 1s infinite; }
+  @keyframes pulse { 50% { opacity: .3; } }
+  .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .stat { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 10px; }
+  .stat .k { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .8px; }
+  .stat .v { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 2px; }
+  .stat.wide { grid-column: span 2; }
+  .bar { height: 6px; border-radius: 3px; background: var(--border); margin-top: 8px; overflow: hidden; }
+  .bar > i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .4s; }
+  .legend { display: flex; flex-wrap: wrap; gap: 10px 14px; font-size: 12px; color: var(--muted); }
+  .legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: -2px; margin-right: 5px; }
+  .gradient { background: linear-gradient(90deg, var(--flood-a), var(--flood-b)); width: 34px !important; }
+  .hint { color: var(--muted); font-size: 12px; margin: 8px 0 0; }
+  .error { color: var(--goal); font-size: 13px; min-height: 1em; }
+  kbd {
+    font: 11px ui-monospace, monospace; padding: 1px 5px; border-radius: 4px;
+    border: 1px solid var(--border); background: var(--bg);
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Laby<span>rinth</span></h1>
+  <div class="sub">A transformer whose <b id="hdr-params">…</b> weights were written by hand, not trained.</div>
+  <div class="spacer"></div>
+  <label style="margin:0;min-width:150px">Theme
+    <select id="theme">
+      <option value="midnight">Midnight</option>
+      <option value="daylight">Daylight</option>
+      <option value="solarized">Solarized</option>
+      <option value="forest">Forest</option>
+      <option value="synthwave">Synthwave</option>
+    </select>
+  </label>
+</header>
+
+<main>
+  <section>
+    <div class="card">
+      <h2>Generate</h2>
+      <label>Algorithm
+        <select id="algorithm">
+          <option value="backtracker">Recursive backtracker · long corridors</option>
+          <option value="prim">Randomized Prim · many dead ends</option>
+          <option value="braid">Braid · loops, several routes</option>
+          <option value="caves">Caves · random walls, may be unsolvable</option>
+        </select>
+      </label>
+      <label>Width <span class="val" id="width-v"></span>
+        <input type="range" id="width" min="5" max="81" value="31">
+      </label>
+      <label>Height <span class="val" id="height-v"></span>
+        <input type="range" id="height" min="5" max="81" value="21">
+      </label>
+      <label>Seed
+        <div class="row">
+          <input type="number" id="seed" min="0" value="1">
+          <button id="dice" title="Random seed" style="flex:0 0 44px">🎲</button>
+        </div>
+      </label>
+      <button class="primary" id="generate">Generate maze</button>
+    </div>
+
+    <div class="card">
+      <h2>Edit</h2>
+      <div class="seg" role="radiogroup" aria-label="Edit tool">
+        <label><input type="radio" name="tool" value="wall" checked><span>▦ Wall</span></label>
+        <label><input type="radio" name="tool" value="start"><span>● Start</span></label>
+        <label><input type="radio" name="tool" value="goal"><span>◆ Goal</span></label>
+      </div>
+      <p class="hint">Click or drag on the maze. <kbd>W</kbd> <kbd>S</kbd> <kbd>G</kbd> switch tools, <kbd>Enter</kbd> solves.</p>
+    </div>
+
+    <div class="card">
+      <h2>Solve</h2>
+      <button class="primary" id="solve">Run transformer</button>
+      <div style="height:10px"></div>
+      <label class="check"><input type="checkbox" id="show-flood" checked> Show goal flood-fill</label>
+      <label class="check"><input type="checkbox" id="animate" checked> Animate loops</label>
+      <div class="error" id="error" role="alert"></div>
+    </div>
+  </section>
+
+  <section class="stage">
+    <div class="card board"><canvas id="canvas" width="600" height="400" aria-label="Maze"></canvas></div>
+    <div class="card">
+      <div class="status"><span class="dot" id="dot"></span><span id="status">Generate a maze to begin.</span></div>
+      <div style="height:10px"></div>
+      <div class="legend">
+        <span><i style="background:var(--wall)"></i>Wall</span>
+        <span><i style="background:var(--start)"></i>Start</span>
+        <span><i style="background:var(--goal)"></i>Goal</span>
+        <span><i style="background:var(--path)"></i>Path</span>
+        <span><i class="gradient"></i>Flood (early → late loop)</span>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="card">
+      <h2>Maze</h2>
+      <div class="stats">
+        <div class="stat"><div class="k">Size</div><div class="v" id="s-size">–</div></div>
+        <div class="stat"><div class="k">Cells</div><div class="v" id="s-cells">–</div></div>
+        <div class="stat"><div class="k">Open</div><div class="v" id="s-open">–</div></div>
+        <div class="stat"><div class="k">Walls</div><div class="v" id="s-walls">–</div></div>
+        <div class="stat wide"><div class="k">Wall density</div><div class="v" id="s-density">–</div><div class="bar"><i id="b-density"></i></div></div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Model run</h2>
+      <div class="stats">
+        <div class="stat"><div class="k">Result</div><div class="v" id="r-result">–</div></div>
+        <div class="stat"><div class="k">Path length</div><div class="v" id="r-path">–</div></div>
+        <div class="stat"><div class="k">Loops</div><div class="v" id="r-loops">–</div></div>
+        <div class="stat"><div class="k">Wall time</div><div class="v" id="r-time">–</div></div>
+        <div class="stat"><div class="k">Tokens</div><div class="v" id="r-tokens">–</div></div>
+        <div class="stat"><div class="k">Weights</div><div class="v" id="r-params">–</div></div>
+        <div class="stat"><div class="k">Token passes</div><div class="v" id="r-passes">–</div></div>
+        <div class="stat"><div class="k">Per loop</div><div class="v" id="r-perloop">–</div></div>
+        <div class="stat wide"><div class="k">Flood coverage <span id="r-reached"></span></div><div class="v" id="r-coverage">–</div><div class="bar"><i id="b-coverage"></i></div></div>
+        <div class="stat wide"><div class="k">Path efficiency (path / open cells)</div><div class="v" id="r-eff">–</div><div class="bar"><i id="b-eff"></i></div></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const canvas = $("canvas"), ctx = canvas.getContext("2d");
+let grid = [], solution = null, frame = 0, params = 0;
+
+// ---- theme ----
+const themeSel = $("theme");
+const savedTheme = localStorage.getItem("theme")
+  ?? (matchMedia("(prefers-color-scheme: light)").matches ? "daylight" : "midnight");
+const applyTheme = t => { document.documentElement.dataset.theme = t; themeSel.value = t; draw(); };
+themeSel.onchange = () => { localStorage.setItem("theme", themeSel.value); applyTheme(themeSel.value); };
+const color = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+// ---- status helpers ----
+function setStatus(text, kind = "") { $("status").textContent = text; $("dot").className = "dot " + kind; }
+function showError(msg) { $("error").textContent = msg; if (msg) setStatus("Error", "bad"); }
+const fmt = n => n.toLocaleString();
+const fmtTime = us => us < 1000 ? `${us} µs` : us < 1e6 ? `${(us / 1000).toFixed(1)} ms` : `${(us / 1e6).toFixed(2)} s`;
+
+async function api(path, body) {
+  const res = await fetch(path, body === undefined ? {} : {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+// ---- drawing ----
+function cellSize() {
+  const h = grid.length, w = grid[0]?.length ?? 1;
+  const box = canvas.parentElement.getBoundingClientRect();
+  return Math.max(4, Math.floor(Math.min((box.width - 32) / w, Math.max(440, innerHeight - 260) / h)));
+}
+
+function mix(a, b, t) {
+  const p = c => [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16));
+  const [x, y] = [p(a), p(b)];
+  return `rgb(${x.map((v, i) => Math.round(v + (y[i] - v) * t)).join(",")})`;
+}
+
+function draw() {
+  if (!grid.length) return;
+  const s = cellSize(), h = grid.length, w = grid[0].length;
+  const dpr = devicePixelRatio || 1;
+  canvas.width = w * s * dpr; canvas.height = h * s * dpr;
+  canvas.style.width = `${w * s}px`; canvas.style.height = `${h * s}px`;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const c = Object.fromEntries(["--wall", "--open", "--path", "--start", "--goal", "--flood-a", "--flood-b"]
+    .map(k => [k, color(k)]));
+  const flood = solution && $("show-flood").checked;
+  const maxLoop = solution ? Math.max(1, ...solution.reached_at.filter(v => v !== null)) : 1;
+  for (let r = 0; r < h; r++) for (let col = 0; col < w; col++) {
+    const ch = grid[r][col];
+    let fill = ch === "#" ? c["--wall"] : c["--open"];
+    const t = flood ? solution.reached_at[r * w + col] : null;
+    if (ch !== "#" && t !== null && t !== undefined && t <= frame) fill = mix(c["--flood-a"], c["--flood-b"], t / maxLoop);
+    ctx.fillStyle = fill;
+    ctx.fillRect(col * s, r * s, s, s);
+  }
+  const path = solution?.path;
+  if (path && frame >= solution.loops) {
+    ctx.strokeStyle = c["--path"]; ctx.lineWidth = Math.max(2, s * 0.35);
+    ctx.lineCap = ctx.lineJoin = "round";
+    ctx.shadowColor = c["--path"]; ctx.shadowBlur = s * 0.6;
+    ctx.beginPath();
+    path.forEach(([r, col], i) => ctx[i ? "lineTo" : "moveTo"](col * s + s / 2, r * s + s / 2));
+    ctx.stroke(); ctx.shadowBlur = 0;
+  }
+  for (const [ch, key, shape] of [["S", "--start", "circle"], ["G", "--goal", "diamond"]]) {
+    const r = grid.findIndex(row => row.includes(ch));
+    if (r < 0) continue;
+    const x = grid[r].indexOf(ch) * s + s / 2, y = r * s + s / 2, rad = s * 0.42;
+    ctx.fillStyle = c[key]; ctx.shadowColor = c[key]; ctx.shadowBlur = s * 0.8;
+    ctx.beginPath();
+    if (shape === "circle") ctx.arc(x, y, rad, 0, Math.PI * 2);
+    else { ctx.moveTo(x, y - rad); ctx.lineTo(x + rad, y); ctx.lineTo(x, y + rad); ctx.lineTo(x - rad, y); }
+    ctx.fill(); ctx.shadowBlur = 0;
+  }
+}
+
+// ---- stats ----
+function mazeStats() {
+  const h = grid.length, w = grid[0].length, cells = h * w;
+  const walls = grid.reduce((n, row) => n + [...row].filter(ch => ch === "#").length, 0);
+  $("s-size").textContent = `${w}×${h}`;
+  $("s-cells").textContent = fmt(cells);
+  $("s-open").textContent = fmt(cells - walls);
+  $("s-walls").textContent = fmt(walls);
+  $("s-density").textContent = `${(100 * walls / cells).toFixed(1)}%`;
+  $("b-density").style.width = `${100 * walls / cells}%`;
+}
+
+function clearRun() {
+  solution = null;
+  for (const id of ["r-result", "r-path", "r-loops", "r-time", "r-tokens", "r-passes", "r-perloop", "r-coverage", "r-eff"])
+    $(id).textContent = "–";
+  $("r-reached").textContent = "";
+  $("b-coverage").style.width = $("b-eff").style.width = "0";
+}
+
+function runStats(res) {
+  const solved = res.path !== null;
+  $("r-result").textContent = solved ? "Solved" : "No path";
+  $("r-result").style.color = solved ? "var(--start)" : "var(--goal)";
+  $("r-path").textContent = solved ? fmt(res.path.length - 1) + " steps" : "–";
+  $("r-loops").textContent = fmt(res.loops);
+  $("r-time").textContent = fmtTime(res.micros);
+  $("r-tokens").textContent = fmt(res.tokens);
+  $("r-params").textContent = fmt(params);
+  $("r-passes").textContent = fmt(res.loops * res.tokens);
+  $("r-perloop").textContent = fmtTime(Math.round(res.micros / Math.max(1, res.loops)));
+  const cov = res.open_cells ? res.reached_cells / res.open_cells : 0;
+  $("r-reached").textContent = `(${fmt(res.reached_cells)} / ${fmt(res.open_cells)})`;
+  $("r-coverage").textContent = `${(100 * cov).toFixed(1)}%`;
+  $("b-coverage").style.width = `${100 * cov}%`;
+  const eff = solved ? res.path.length / res.open_cells : 0;
+  $("r-eff").textContent = solved ? `${(100 * eff).toFixed(1)}%` : "–";
+  $("b-eff").style.width = `${100 * eff}%`;
+}
+
+// ---- actions ----
+async function generate() {
+  showError("");
+  try {
+    const res = await api("/api/generate", {
+      algorithm: $("algorithm").value, width: +$("width").value, height: +$("height").value, seed: +$("seed").value,
+    });
+    grid = res.rows.map(r => [...r]);
+    clearRun(); mazeStats(); draw();
+    setStatus("Maze ready. Edit it or run the transformer.");
+  } catch (e) { showError(e.message); }
+}
+
+async function solve() {
+  if (!grid.length) return;
+  showError("");
+  const btn = $("solve"); btn.disabled = true;
+  setStatus("Transformer looping to a fixed point…", "busy");
+  try {
+    const res = await api("/api/solve", { rows: grid.map(r => r.join("")) });
+    solution = res; runStats(res);
+    setStatus(res.path ? `Path found after ${fmt(res.loops)} loops.` : "Goal unreachable from start.",
+      res.path ? "ok" : "bad");
+    await animate();
+  } catch (e) { showError(e.message); }
+  btn.disabled = false;
+}
+
+function animate() {
+  if (!$("animate").checked || matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    frame = Infinity; draw(); return Promise.resolve();
+  }
+  const total = solution.loops, start = performance.now(), ms = Math.min(2500, 300 + total * 8);
+  return new Promise(done => {
+    const tick = now => {
+      frame = Math.round(total * Math.min(1, (now - start) / ms));
+      draw();
+      if (frame < total) requestAnimationFrame(tick); else { frame = Infinity; draw(); done(); }
+    };
+    requestAnimationFrame(tick);
+  });
+}
+
+// ---- editing ----
+let painting = null;
+function cellAt(e) {
+  const rect = canvas.getBoundingClientRect(), s = rect.width / grid[0].length;
+  const col = Math.floor((e.clientX - rect.left) / s), r = Math.floor((e.clientY - rect.top) / s);
+  return r >= 0 && col >= 0 && r < grid.length && col < grid[0].length ? [r, col] : null;
+}
+function place(ch, [r, col]) {
+  for (const row of grid) { const i = row.indexOf(ch); if (i >= 0) row[i] = "."; }
+  grid[r][col] = ch;
+}
+function edit(e) {
+  const at = cellAt(e);
+  if (!at) return;
+  const [r, col] = at, tool = document.querySelector("input[name=tool]:checked").value, cur = grid[r][col];
+  if (tool === "wall") {
+    if (cur === "S" || cur === "G") return;
+    painting ??= cur === "#" ? "." : "#";
+    if (cur === painting) return;
+    grid[r][col] = painting;
+  } else {
+    place(tool === "start" ? "S" : "G", at);
+  }
+  clearRun(); mazeStats(); draw();
+}
+canvas.addEventListener("pointerdown", e => { if (!grid.length) return; canvas.setPointerCapture(e.pointerId); painting = null; edit(e); });
+canvas.addEventListener("pointermove", e => { if (e.buttons && grid.length) edit(e); });
+canvas.addEventListener("pointerup", () => { painting = null; });
+
+addEventListener("keydown", e => {
+  if (e.target.matches("input[type=number], select")) return;
+  const tool = { w: "wall", s: "start", g: "goal" }[e.key.toLowerCase()];
+  if (tool) document.querySelector(`input[name=tool][value=${tool}]`).checked = true;
+  if (e.key === "Enter") solve();
+});
+
+// ---- wiring ----
+for (const id of ["width", "height"]) {
+  const input = $(id), show = () => $(`${id}-v`).textContent = input.value;
+  input.oninput = show; input.onchange = generate; show();
+}
+$("algorithm").onchange = generate;
+$("seed").onchange = generate;
+$("dice").onclick = () => { $("seed").value = Math.floor(Math.random() * 1e9); generate(); };
+$("generate").onclick = generate;
+$("solve").onclick = solve;
+$("show-flood").onchange = draw;
+addEventListener("resize", draw);
+
+applyTheme(savedTheme);
+api("/api/model").then(m => {
+  params = m.parameters;
+  $("hdr-params").textContent = fmt(m.parameters);
+  for (const id of ["width", "height"]) $(id).max = m.max_side;
+}).catch(e => showError(e.message));
+generate();
+</script>
+</body>
+</html>

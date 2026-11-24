@@ -40,6 +40,13 @@ const HEAD: usize = 4;
 /// `BETA·(row² + col²)`; f32 keeps the gap of `BETA` resolvable up to a few hundred
 /// cells per side.
 const BETA: f32 = 25.0;
+/// Attention kernel window (Chebyshev radius around the attending token). Every token
+/// outside it is at squared distance `≥ 5` from the head's target, so its weight
+/// `e^(-BETA·5)` underflows to exactly 0 in f32: skipping it is bit-identical to dense
+/// attention, but costs `O(cells)` instead of `O(cells²)` per loop.
+const WINDOW: usize = 3;
+/// Fewest tokens worth a thread of their own.
+const MIN_CHUNK: usize = 512;
 /// Slope of the snapping step; maps `x ≤ 0.45` to 0 and `x ≥ 0.55` to 1 exactly.
 const STEEP: f32 = 10.0;
 
@@ -110,84 +117,169 @@ impl Model {
     /// Returns the shortest path from start to goal, both inclusive, or `None` when the
     /// goal is unreachable.
     ///
-    /// Cost is `O(cells²)` per loop (dense attention) and `O(cells)` loops.
+    /// Cost is `O(cells)` per loop and `O(cells)` loops.
     ///
     /// # Panics
     ///
     /// Panics if the model fails to converge, which would be a bug in the weights.
     pub fn solve(&self, maze: &Maze) -> Option<Vec<Pos>> {
+        self.trace(maze).path
+    }
+
+    /// Like [`Model::solve`], but also reports how the model got there.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the model fails to converge, which would be a bug in the weights.
+    pub fn trace(&self, maze: &Maze) -> Trace {
         // A wall border gives every real cell four neighbours to attend to.
         let (h, w) = (maze.height() + 2, maze.width() + 2);
+        let token = |p: Pos| (p.row + 1) * w + p.col + 1;
         let mut x = embed(maze, h, w);
+        let mut reached_at = vec![None; maze.width() * maze.height()];
         let max_loops = 3 * x.len() + 8;
-        let converged = (0..max_loops).any(|_| {
-            let before = x.clone();
-            self.step(&mut x);
-            x == before
+        let loops = (1..=max_loops).find(|&n| {
+            let next = self.step(&x, w);
+            for (i, r) in reached_at.iter_mut().enumerate() {
+                let p = Pos {
+                    row: i / maze.width(),
+                    col: i % maze.width(),
+                };
+                if r.is_none() && next[token(p)][REACHED] == 1.0 {
+                    *r = Some(n);
+                }
+            }
+            std::mem::replace(&mut x, next) == x
         });
-        assert!(converged, "no fixed point after {max_loops} loops");
-
-        let token = |p: Pos| &x[(p.row + 1) * w + p.col + 1];
-        let mut pos = maze.start();
-        let mut path = Vec::new();
-        while token(pos)[ON_PATH] == 1.0 {
-            path.push(pos);
-            if pos == maze.goal() {
-                return Some(path);
-            }
-            let dir = (0..4).find(|&d| token(pos)[PTR + d] == 1.0)?;
-            let (dr, dc) = DIRS[dir];
-            pos = Pos {
-                row: pos.row.checked_add_signed(dr as isize)?,
-                col: pos.col.checked_add_signed(dc as isize)?,
-            };
+        let loops = loops.unwrap_or_else(|| panic!("no fixed point after {max_loops} loops"));
+        Trace {
+            path: read_path(maze, |p| &x[token(p)]),
+            loops,
+            reached_at,
         }
-        assert!(path.is_empty(), "path broke off after {path:?}");
-        None
     }
 
-    /// One loop iteration: `x += attn(x); x += mlp(x)`.
-    fn step(&self, x: &mut [Vector]) {
-        let mut delta = vec![[0.0; D]; x.len()];
-        for head in &self.heads {
-            let proj = |m: &[Vector; HEAD], t: &Vector| m.map(|row| dot(&row, t));
-            let q: Vec<_> = x.iter().map(|t| proj(&head.wq, t)).collect();
-            let k: Vec<_> = x.iter().map(|t| proj(&head.wk, t)).collect();
-            let v: Vec<_> = x.iter().map(|t| head.wv.map(|row| dot(&row, t))).collect();
-            let mut scores = vec![0.0; x.len()];
-            for (qi, out) in q.iter().zip(&mut delta) {
-                for (s, kj) in scores.iter_mut().zip(&k) {
-                    *s = qi.iter().zip(kj).map(|(a, b)| a * b).sum();
-                }
-                let max = scores.iter().copied().fold(f32::NEG_INFINITY, f32::max);
-                let (mut total, mut mix) = (0.0, [0.0; 2]);
-                for (s, vj) in scores.iter().zip(&v) {
-                    let e = (s - max).exp();
-                    total += e;
-                    mix[0] += e * vj[0];
-                    mix[1] += e * vj[1];
-                }
-                for (m, wo) in mix.iter().zip(&head.wo) {
-                    for (o, w) in out.iter_mut().zip(wo) {
-                        *o += m / total * w;
+    /// One loop iteration over a padded grid `w` tokens wide, tokens split across threads.
+    fn step(&self, x: &[Vector], w: usize) -> Vec<Vector> {
+        let qkv: Vec<[Qkv; 4]> = x
+            .iter()
+            .map(|t| {
+                self.heads.each_ref().map(|head| Qkv {
+                    q: head.wq.map(|row| dot(&row, t)),
+                    k: head.wk.map(|row| dot(&row, t)),
+                    v: head.wv.map(|row| dot(&row, t)),
+                })
+            })
+            .collect();
+        let mut next = x.to_vec();
+        let threads = std::thread::available_parallelism().map_or(1, usize::from);
+        let chunk = x.len().div_ceil(threads).max(MIN_CHUNK);
+        std::thread::scope(|s| {
+            for (n, out) in next.chunks_mut(chunk).enumerate() {
+                let qkv = &qkv;
+                s.spawn(move || {
+                    for (i, t) in out.iter_mut().enumerate() {
+                        self.block(n * chunk + i, t, qkv, w);
                     }
+                });
+            }
+        });
+        next
+    }
+
+    /// Token `i` through the block: `t += attn(x)[i]; t += mlp(t)`.
+    fn block(&self, i: usize, t: &mut Vector, qkv: &[[Qkv; 4]], w: usize) {
+        let (r, c) = (i / w, i % w);
+        let rows = r.saturating_sub(WINDOW)..(r + WINDOW + 1).min(qkv.len() / w);
+        let cols = c.saturating_sub(WINDOW)..(c + WINDOW + 1).min(w);
+        // Row-major, like dense attention, so float sums round identically.
+        let mut window = [0; (2 * WINDOW + 1) * (2 * WINDOW + 1)];
+        let mut len = 0;
+        for row in rows {
+            for j in row * w + cols.start..row * w + cols.end {
+                window[len] = j;
+                len += 1;
+            }
+        }
+        let window = &window[..len];
+        let mut scores = [0.0; (2 * WINDOW + 1) * (2 * WINDOW + 1)];
+        let mut attn = [0.0; D];
+        for (hd, head) in self.heads.iter().enumerate() {
+            let q = &qkv[i][hd].q;
+            for (s, &j) in scores.iter_mut().zip(window) {
+                *s = q.iter().zip(&qkv[j][hd].k).map(|(a, b)| a * b).sum();
+            }
+            let max = scores[..len]
+                .iter()
+                .copied()
+                .fold(f32::NEG_INFINITY, f32::max);
+            let (mut total, mut mix) = (0.0, [0.0; 2]);
+            for (s, &j) in scores.iter().zip(window) {
+                // Below this e^x is exactly 0 in f32, so skipping it changes no sum.
+                if s - max < -104.0 {
+                    continue;
+                }
+                let e = (s - max).exp();
+                total += e;
+                mix[0] += e * qkv[j][hd].v[0];
+                mix[1] += e * qkv[j][hd].v[1];
+            }
+            for (m, wo) in mix.iter().zip(&head.wo) {
+                for (o, w) in attn.iter_mut().zip(wo) {
+                    *o += m / total * w;
                 }
             }
         }
-        for (t, d) in x.iter_mut().zip(&delta) {
-            t.iter_mut().zip(d).for_each(|(a, b)| *a += b);
+        t.iter_mut().zip(&attn).for_each(|(a, b)| *a += b);
+        let mut out = [0.0; D];
+        for unit in &self.mlp {
+            let a = dot(&unit.input, t).max(0.0);
+            out.iter_mut()
+                .zip(&unit.output)
+                .for_each(|(o, w)| *o += a * w);
         }
-        for t in x.iter_mut() {
-            let mut out = [0.0; D];
-            for unit in &self.mlp {
-                let a = dot(&unit.input, t).max(0.0);
-                out.iter_mut()
-                    .zip(&unit.output)
-                    .for_each(|(o, w)| *o += a * w);
-            }
-            t.iter_mut().zip(&out).for_each(|(a, b)| *a += b);
-        }
+        t.iter_mut().zip(&out).for_each(|(a, b)| *a += b);
     }
+}
+
+/// One token's query, key and value for one head.
+#[derive(Debug, Clone, Copy)]
+struct Qkv {
+    q: [f32; HEAD],
+    k: [f32; HEAD],
+    v: [f32; 2],
+}
+
+/// What [`Model::trace`] observed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct Trace {
+    /// Same as [`Model::solve`].
+    pub path: Option<Vec<Pos>>,
+    /// Loop iterations until the residual stream stopped changing, the last one included.
+    pub loops: usize,
+    /// Row-major per cell: the loop in which the flood fill from the goal reached it.
+    pub reached_at: Vec<Option<usize>>,
+}
+
+/// Follows `PTR` from the start through `ON_PATH` tokens of the converged stream.
+fn read_path<'a>(maze: &Maze, token: impl Fn(Pos) -> &'a Vector) -> Option<Vec<Pos>> {
+    let mut pos = maze.start();
+    let mut path = Vec::new();
+    while token(pos)[ON_PATH] == 1.0 {
+        path.push(pos);
+        if pos == maze.goal() {
+            return Some(path);
+        }
+        let dir = (0..4).find(|&d| token(pos)[PTR + d] == 1.0)?;
+        let (dr, dc) = DIRS[dir];
+        pos = Pos {
+            row: pos.row.checked_add_signed(dr as isize)?,
+            col: pos.col.checked_add_signed(dc as isize)?,
+        };
+    }
+    assert!(path.is_empty(), "path broke off after {path:?}");
+    None
 }
 
 /// Token embedding of the padded `h × w` grid: cell type plus position features.
