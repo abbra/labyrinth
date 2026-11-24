@@ -119,10 +119,12 @@ impl Model {
         if cell == Cell::Wall || x[i] != 0 {
             return x[i];
         }
-        maze.neighbours(i)
-            .iter()
-            .position(|&j| x[j] != 0)
-            .map_or(0, |slot| slot as State + 1)
+        for (slot, &neighbour) in maze.neighbours(i).iter().enumerate() {
+            if x[neighbour] != 0 {
+                return slot as State + 1;
+            }
+        }
+        0
     }
 }
 
