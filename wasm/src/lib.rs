@@ -5,6 +5,7 @@ mod board;
 #[path = "../../server/src/generate.rs"]
 mod generate;
 
+#[cfg(not(target_family = "wasm"))]
 use std::time::Instant;
 
 use board::{Board, Shape};
@@ -12,6 +13,13 @@ use generate::Algorithm;
 use labyrinth::Model;
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
+
+#[cfg(target_family = "wasm")]
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(js_namespace = performance, js_name = now)]
+    fn performance_now() -> f64;
+}
 
 const MIN_SIDE: usize = 5;
 const MAX_SIDE: usize = 321;
@@ -84,8 +92,14 @@ pub fn solve_maze(
         .iter()
         .filter(|&&cell| cell != labyrinth::Cell::Wall)
         .count();
+    #[cfg(target_family = "wasm")]
+    let started = performance_now();
+    #[cfg(not(target_family = "wasm"))]
     let started = Instant::now();
     let trace = Model::new().trace(&maze);
+    #[cfg(target_family = "wasm")]
+    let micros = ((performance_now() - started) * 1000.0) as u128;
+    #[cfg(not(target_family = "wasm"))]
     let micros = started.elapsed().as_micros();
     let reached_cells = trace
         .reached_at

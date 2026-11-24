@@ -267,7 +267,7 @@ async function api(path, body) {
   if (wasmBackend) {
     await wasmReady;
     if (path === "/api/model") return { parameters: wasm.parameter_count(), max_side: 321 };
-    if (path === "/api/generate") return JSON.parse(wasm.generate_maze(body.shape, body.algorithm, body.width, body.height, body.seed));
+    if (path === "/api/generate") return JSON.parse(wasm.generate_maze(body.shape, body.algorithm, body.width, body.height, BigInt(body.seed)));
     if (path === "/api/solve") return JSON.parse(wasm.solve_maze(body.shape, body.width, body.height, body.cells));
   }
   const res = await fetch(path, body === undefined ? {} : {
