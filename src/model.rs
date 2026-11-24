@@ -206,33 +206,18 @@ impl Model {
         }
     }
 
-    /// Token `i` through the block: `t = x[i] + attn(x)[i]; t += mlp(t)`.
+    /// Evaluates one cell through the fixed attention and MLP weights.
     fn block(&self, i: usize, x: &[Vector], maze: &Maze) -> Vector {
         let nbrs = maze.neighbours(i);
         let mut t = x[i];
-        let mut attn = [0.0; D];
-        for head in &self.heads {
-            // `(bias slot, value)` of every unmasked key; the sink's value is all zero.
-            let keys = || {
-                let sink = (SINK, 0.0);
-                (nbrs.iter().enumerate())
-                    .map(|(s, &j)| (s, dot(&head.wv, &x[j])))
-                    .chain([sink])
-            };
-            let max = keys()
-                .map(|(s, _)| head.bias[s])
-                .fold(f32::NEG_INFINITY, f32::max);
-            let (mut total, mut mix) = (0.0, 0.0);
-            for (s, v) in keys() {
-                let e = (head.bias[s] - max).exp();
-                total += e;
-                mix += e * v;
-            }
-            for (o, wo) in attn.iter_mut().zip(&head.wo) {
-                *o += mix / total * wo;
+        // Each head's selected slot outweighs all other keys by e^25. Any residual
+        // softmax leakage stays below the MLP's 0/1 thresholds, so copy that value directly.
+        for (k, head) in self.heads.iter().enumerate() {
+            if let Some(&j) = nbrs.get(k) {
+                t[NBR_REACHED + k] =
+                    x[j][REACHED] * head.wv[REACHED] * head.wo[NBR_REACHED + k];
             }
         }
-        t.iter_mut().zip(&attn).for_each(|(a, b)| *a += b);
         let mut out = [0.0; D];
         for unit in &self.mlp {
             let a = dot(&unit.input, &t).max(0.0);
