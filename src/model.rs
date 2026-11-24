@@ -75,15 +75,20 @@ impl Model {
         while x[start] == 0 && !frontier.is_empty() {
             candidates.clear();
             for &i in &frontier {
-                for &j in maze.neighbours(i) {
-                    if x[j] == 0 && maze.cells()[j] != Cell::Wall {
-                        let slot = maze
-                            .neighbours(j)
-                            .iter()
-                            .position(|&neighbour| x[neighbour] != 0 && x[neighbour] < PENDING)
-                            .expect("a candidate has a reached neighbour");
-                        x[j] = (slot + 1) as State | PENDING;
+                let (neighbours, reverse_slots) = maze.neighbours_with_reverse_slots(i);
+                for (edge_slot, &j) in neighbours.iter().enumerate() {
+                    if x[j] == 0 {
+                        if maze.cells()[j] == Cell::Wall {
+                            continue;
+                        }
+                        let slot = (reverse_slots[edge_slot] + 1) as State;
+                        x[j] = slot | PENDING;
                         candidates.push(j);
+                    } else if x[j] & PENDING != 0 {
+                        let slot = (reverse_slots[edge_slot] + 1) as State;
+                        if slot < (x[j] & !PENDING) {
+                            x[j] = slot | PENDING;
+                        }
                     }
                 }
             }
