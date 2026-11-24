@@ -27,6 +27,7 @@ pub struct Maze {
     /// Neighbours of cell `i` are `targets[offsets[i]..offsets[i + 1]]`.
     offsets: Vec<usize>,
     targets: Vec<usize>,
+    open_square_side: Option<usize>,
     start: usize,
     goals: Vec<usize>,
 }
@@ -89,10 +90,12 @@ impl Maze {
         if goals.is_empty() {
             return Err(MazeError::Goal);
         }
+        let open_square_side = square_side(&cells, &offsets, &targets);
         Ok(Self {
             cells,
             offsets,
             targets,
+            open_square_side,
             start,
             goals,
         })
@@ -121,6 +124,9 @@ impl Maze {
     pub fn goals(&self) -> &[usize] {
         &self.goals
     }
+    pub(crate) fn open_square_side(&self) -> Option<usize> {
+        self.open_square_side
+    }
 
     /// Id of the first goal cell.
     ///
@@ -128,6 +134,28 @@ impl Maze {
     pub fn goal(&self) -> usize {
         self.goals[0]
     }
+}
+
+fn square_side(cells: &[Cell], offsets: &[usize], targets: &[usize]) -> Option<usize> {
+    let side = (cells.len() as f64).sqrt() as usize;
+    if side.checked_mul(side) != Some(cells.len()) || cells.contains(&Cell::Wall) {
+        return None;
+    }
+    for i in 0..cells.len() {
+        let (row, col) = (i / side, i % side);
+        let degree = usize::from(row > 0)
+            + usize::from(row + 1 < side)
+            + usize::from(col > 0)
+            + usize::from(col + 1 < side);
+        if offsets[i + 1] - offsets[i] != degree
+            || targets[offsets[i]..offsets[i + 1]]
+                .iter()
+                .any(|&j| row.abs_diff(j / side) + col.abs_diff(j % side) != 1)
+        {
+            return None;
+        }
+    }
+    Some(side)
 }
 
 /// Why a maze was rejected.

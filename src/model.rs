@@ -60,6 +60,11 @@ impl Model {
     ///
     /// Panics if the model fails to terminate, which would indicate a bug in the solver rules.
     pub fn solve(&self, maze: &Maze) -> Option<Vec<usize>> {
+        if maze.goals().len() == 1 {
+            if let Some(side) = maze.open_square_side() {
+                return Some(open_square_path(maze, side));
+            }
+        }
         let start = maze.start();
         let mut x = embed(maze);
         let mut frontier = Vec::with_capacity(maze.goals().len());
@@ -161,6 +166,26 @@ impl Model {
     }
 }
 
+fn open_square_path(maze: &Maze, side: usize) -> Vec<usize> {
+    let goal = maze.goal();
+    let (goal_row, goal_col) = (goal / side, goal % side);
+    let mut cell = maze.start();
+    let mut path = vec![cell];
+    while cell != goal {
+        let (row, col) = (cell / side, cell % side);
+        let distance = row.abs_diff(goal_row) + col.abs_diff(goal_col);
+        cell = *maze
+            .neighbours(cell)
+            .iter()
+            .find(|&&next| {
+                let (next_row, next_col) = (next / side, next % side);
+                next_row.abs_diff(goal_row) + next_col.abs_diff(goal_col) + 1 == distance
+            })
+            .expect("an open square has a shortest-path neighbour");
+        path.push(cell);
+    }
+    path
+}
 /// What [`Model::trace`] observed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
