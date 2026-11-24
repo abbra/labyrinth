@@ -1,6 +1,7 @@
+mod timing;
 use std::collections::VecDeque;
 use std::hint::black_box;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use labyrinth::{Cell, Maze, Model};
 
@@ -18,17 +19,13 @@ fn main() {
         for offset in 0..2 {
             match (run + offset) % 2 {
                 0 => {
-                    let start = Instant::now();
-                    let path = black_box(model.solve(black_box(&maze)))
-                        .expect("open square must be solvable");
-                    model_times.push(start.elapsed());
+                    let (elapsed, path) = timing::time_batch(|| model.solve(black_box(&maze)));
+                    model_times.push(elapsed);
                     check_path(&maze, &path, expected_length);
                 }
                 _ => {
-                    let start = Instant::now();
-                    let path = black_box(queue_bfs(black_box(&maze)))
-                        .expect("open square must be solvable");
-                    bfs_times.push(start.elapsed());
+                    let (elapsed, path) = timing::time_batch(|| queue_bfs(black_box(&maze)));
+                    bfs_times.push(elapsed);
                     check_path(&maze, &path, expected_length);
                 }
             }

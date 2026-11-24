@@ -4,11 +4,12 @@ mod board;
 #[allow(dead_code)]
 #[path = "../server/src/generate.rs"]
 mod generate;
+mod timing;
 
 use std::cmp::Reverse;
 use std::collections::{BinaryHeap, VecDeque};
 use std::hint::black_box;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use labyrinth::{Cell, Maze, Model};
 
@@ -85,27 +86,19 @@ fn benchmark(name: &str, maze: &Maze, width: usize) {
 }
 
 fn time_model(model: &Model, maze: &Maze) -> (Duration, Vec<usize>) {
-    let start = Instant::now();
-    let path = black_box(model.solve(black_box(maze))).expect("maze is solvable");
-    (start.elapsed(), path)
+    timing::time_batch(|| model.solve(black_box(maze)))
 }
 
 fn time_queue_bfs(maze: &Maze) -> (Duration, Vec<usize>) {
-    let start = Instant::now();
-    let path = black_box(queue_bfs(black_box(maze))).expect("maze is solvable");
-    (start.elapsed(), path)
+    timing::time_batch(|| queue_bfs(black_box(maze)))
 }
 
 fn time_bidirectional_bfs(maze: &Maze) -> (Duration, Vec<usize>) {
-    let start = Instant::now();
-    let path = black_box(bidirectional_bfs(black_box(maze))).expect("maze is solvable");
-    (start.elapsed(), path)
+    timing::time_batch(|| bidirectional_bfs(black_box(maze)))
 }
 
 fn time_a_star(maze: &Maze, width: usize) -> (Duration, Vec<usize>) {
-    let start = Instant::now();
-    let path = black_box(a_star(black_box(maze), width)).expect("maze is solvable");
-    (start.elapsed(), path)
+    timing::time_batch(|| a_star(black_box(maze), width))
 }
 
 fn queue_bfs(maze: &Maze) -> Option<Vec<usize>> {
