@@ -11,6 +11,9 @@
 //! the same weights solve a maze of any size; the MLP snaps every update back to exact
 //! 0/1 values, so softmax leakage never accumulates across loops.
 
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering::Relaxed};
+use std::sync::{Barrier, Mutex, RwLock};
+
 use crate::maze::{Cell, Maze, Pos};
 
 // Residual stream layout.
@@ -31,8 +34,10 @@ const BETA: f32 = 25.0;
 const WINDOW: usize = 3;
 /// Side of the relative-position bias table.
 const SPAN: usize = 2 * WINDOW + 1;
-/// Fewest tokens worth a thread of their own.
-const MIN_CHUNK: usize = 512;
+/// Dirty tokens a thread claims at a time.
+const CLAIM: usize = 8;
+/// Fewest dirty tokens worth waking the pool for; measured, not derived.
+const PARALLEL_MIN: usize = 4 * CLAIM;
 /// Slope of the snapping step; maps `x ≤ 0.45` to 0 and `x ≥ 0.55` to 1 exactly.
 const STEEP: f32 = 10.0;
 
@@ -122,69 +127,89 @@ impl Model {
         // A wall border gives every real cell four neighbours to attend to.
         let (h, w) = (maze.height() + 2, maze.width() + 2);
         let token = |p: Pos| (p.row + 1) * w + p.col + 1;
-        let mut x = embed(maze, h, w);
+        let x = embed(maze, h, w);
+        let threads = std::thread::available_parallelism().map_or(1, usize::from);
+        let pool = Pool {
+            // A token's output depends only on tokens within WINDOW of it, so one that saw
+            // no change there last loop would recompute its own value: skip it.
+            dirty: RwLock::new((0..x.len()).collect()),
+            x: RwLock::new(x),
+            cursor: AtomicUsize::new(0),
+            out: (0..threads).map(|_| Mutex::default()).collect(),
+            start: Barrier::new(threads),
+            end: Barrier::new(threads),
+            done: AtomicBool::new(false),
+        };
         let mut reached_at = vec![None; maze.width() * maze.height()];
-        // A token's output depends only on tokens within WINDOW of it, so one that saw no
-        // change there last loop would recompute its own value: skip it.
-        let mut dirty: Vec<usize> = (0..x.len()).collect();
-        let mut marked = vec![false; x.len()];
-        let (start, max_loops) = (token(maze.start()), x.len() + 1);
-        let (mut loops, mut token_passes) = (0, 0);
-        while x[start][REACHED] != 1.0 && !dirty.is_empty() {
-            loops += 1;
-            assert!(loops <= max_loops, "no fixed point after {max_loops} loops");
-            token_passes += dirty.len();
-            let next = self.step(&x, w, &dirty);
-            let changed: Vec<usize> = dirty
-                .iter()
-                .zip(next)
-                .filter_map(|(&i, t)| (std::mem::replace(&mut x[i], t) != t).then_some(i))
-                .collect();
-            dirty.clear();
-            for i in changed {
-                let (r, c) = (i / w, i % w);
-                if (1..h - 1).contains(&r) && (1..w - 1).contains(&c) {
-                    reached_at[(r - 1) * maze.width() + c - 1].get_or_insert(loops);
+        let (loops, token_passes) = std::thread::scope(|s| {
+            for id in 1..threads {
+                let pool = &pool;
+                s.spawn(move || {
+                    while pool.wait_for_loop() {
+                        pool.work(self, w, id);
+                        pool.end.wait();
+                    }
+                });
+            }
+            // Releases the workers on every exit, unwinding included, so scope can join.
+            let _shutdown = Shutdown(&pool);
+            let n = w * h;
+            let mut marked = vec![false; n];
+            let mut changed = Vec::new();
+            let (start, max_loops) = (token(maze.start()), n + 1);
+            let (mut loops, mut token_passes) = (0, 0);
+            loop {
+                let (mut x, mut dirty) = (pool.x.write().unwrap(), pool.dirty.write().unwrap());
+                if x[start][REACHED] == 1.0 || dirty.is_empty() {
+                    break (loops, token_passes);
                 }
-                for row in r.saturating_sub(WINDOW)..(r + WINDOW + 1).min(h) {
-                    let first = row * w + c.saturating_sub(WINDOW);
-                    let span = &mut marked[first..row * w + (c + WINDOW + 1).min(w)];
-                    for (j, seen) in (first..).zip(span) {
-                        if !std::mem::replace(seen, true) {
-                            dirty.push(j);
+                loops += 1;
+                assert!(loops <= max_loops, "no fixed point after {max_loops} loops");
+                token_passes += dirty.len();
+                let parallel = threads > 1 && dirty.len() >= PARALLEL_MIN;
+                drop((x, dirty));
+                pool.cursor.store(0, Relaxed);
+                if parallel {
+                    pool.start.wait();
+                    pool.work(self, w, 0);
+                    pool.end.wait();
+                } else {
+                    pool.work(self, w, 0);
+                }
+                (x, dirty) = (pool.x.write().unwrap(), pool.dirty.write().unwrap());
+                for out in &pool.out {
+                    for (i, t) in out.lock().unwrap().drain(..) {
+                        if std::mem::replace(&mut x[i], t) != t {
+                            changed.push(i);
                         }
                     }
                 }
+                dirty.clear();
+                for i in changed.drain(..) {
+                    let (r, c) = (i / w, i % w);
+                    if (1..h - 1).contains(&r) && (1..w - 1).contains(&c) {
+                        reached_at[(r - 1) * maze.width() + c - 1].get_or_insert(loops);
+                    }
+                    for row in r.saturating_sub(WINDOW)..(r + WINDOW + 1).min(h) {
+                        let first = row * w + c.saturating_sub(WINDOW);
+                        let span = &mut marked[first..row * w + (c + WINDOW + 1).min(w)];
+                        for (j, seen) in (first..).zip(span) {
+                            if !std::mem::replace(seen, true) {
+                                dirty.push(j);
+                            }
+                        }
+                    }
+                }
+                dirty.iter().for_each(|&j| marked[j] = false);
             }
-            dirty.iter().for_each(|&j| marked[j] = false);
-        }
+        });
+        let x = pool.x.into_inner().unwrap();
         Trace {
             path: read_path(maze, |p| &x[token(p)]),
             loops,
             token_passes,
             reached_at,
         }
-    }
-
-    /// One loop iteration over the `dirty` tokens of a padded grid `w` tokens wide,
-    /// split across threads when there are enough of them.
-    fn step(&self, x: &[Vector], w: usize, dirty: &[usize]) -> Vec<Vector> {
-        let threads = std::thread::available_parallelism().map_or(1, usize::from);
-        let chunk = dirty.len().div_ceil(threads).max(MIN_CHUNK);
-        if dirty.len() <= chunk {
-            return dirty.iter().map(|&i| self.block(i, x, w)).collect();
-        }
-        let mut next = vec![[0.0; D]; dirty.len()];
-        std::thread::scope(|s| {
-            for (out, ids) in next.chunks_mut(chunk).zip(dirty.chunks(chunk)) {
-                s.spawn(move || {
-                    for (t, &i) in out.iter_mut().zip(ids) {
-                        *t = self.block(i, x, w);
-                    }
-                });
-            }
-        });
-        next
     }
 
     /// Token `i` through the block: `t = x[i] + attn(x)[i]; t += mlp(t)`.
@@ -354,4 +379,50 @@ fn mlp() -> Vec<Unit> {
         units.push(Unit { input, output });
     }
     units
+}
+
+/// Worker threads that live for one [`Model::trace`] and evaluate the dirty tokens of
+/// each loop, claiming them `CLAIM` at a time.
+struct Pool {
+    x: RwLock<Vec<Vector>>,
+    dirty: RwLock<Vec<usize>>,
+    cursor: AtomicUsize,
+    /// `(token, new value)` per thread; index 0 is the calling thread.
+    out: Vec<Mutex<Vec<(usize, Vector)>>>,
+    start: Barrier,
+    end: Barrier,
+    done: AtomicBool,
+}
+
+impl Pool {
+    /// Blocks a worker until the next loop; `false` once the trace is over.
+    fn wait_for_loop(&self) -> bool {
+        self.start.wait();
+        !self.done.load(Relaxed)
+    }
+
+    fn work(&self, model: &Model, w: usize, id: usize) {
+        let (x, dirty) = (self.x.read().unwrap(), self.dirty.read().unwrap());
+        let mut out = self.out[id].lock().unwrap();
+        loop {
+            let first = self.cursor.fetch_add(CLAIM, Relaxed);
+            let Some(ids) = dirty.get(first..(first + CLAIM).min(dirty.len())) else {
+                break;
+            };
+            if ids.is_empty() {
+                break;
+            }
+            out.extend(ids.iter().map(|&i| (i, model.block(i, &x, w))));
+        }
+    }
+}
+
+/// Wakes the idle workers with `done` set so they exit.
+struct Shutdown<'a>(&'a Pool);
+
+impl Drop for Shutdown<'_> {
+    fn drop(&mut self) {
+        self.0.done.store(true, Relaxed);
+        self.0.start.wait();
+    }
 }
