@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 
 /// Smallest side the carving generators can fit separate start and goal rooms into.
 const MIN_SIDE: usize = 5;
-/// Largest side accepted; a 321×321 maze solves in about 0.5 s on 24 cores.
+/// Largest side accepted; a 321×321 maze of any shape solves in about 0.3 s on 24 cores.
 const MAX_SIDE: usize = 321;
 
 #[tokio::main]

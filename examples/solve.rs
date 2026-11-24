@@ -18,8 +18,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .filter(|l| !l.trim().is_empty())
         .map(|l| l.chars().collect())
         .collect();
-    for p in &path[1..path.len() - 1] {
-        rows[p.row][p.col] = '*';
+    let width = rows[0].len();
+    for &cell in &path[1..path.len() - 1] {
+        rows[cell / width][cell % width] = '*';
     }
     for row in rows {
         println!("{}", String::from_iter(row));
