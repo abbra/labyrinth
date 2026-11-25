@@ -58,14 +58,19 @@ impl Block {
         let mut output = input[i];
         let [one, open, goal, reached, ..] = output;
         let ptr_base = 10.0 * (open - one - goal - reached);
+        let heads = self.attend(input, neighbours);
+        let scratch: HeadRow = array::from_fn(|d| output[NBR_REACHED + d] + heads[d]);
+        let scaled = scratch.map(|v| 10.0 * v);
+        // Keep the ordered f32 prefix separate so LLVM can vectorize the eight ReLU pairs.
         let mut prefix = 0.0;
-        for (slot, value) in self.attend(input, neighbours).into_iter().enumerate() {
-            let scratch = output[NBR_REACHED + slot] + value;
-            let scaled = 10.0 * scratch;
-            // Pointer rows differ only in their selected slot and the negative prefix.
-            output[PTR + slot] += step(ptr_base - prefix + scaled, one);
-            prefix += scaled;
-            output[NBR_REACHED + slot] = scratch - scratch.max(0.0);
+        let earlier = scaled.map(|v| {
+            let previous = prefix;
+            prefix += v;
+            previous
+        });
+        for d in 0..MAX_DEGREE {
+            output[PTR + d] += step(ptr_base - earlier[d] + scaled[d], one);
+            output[NBR_REACHED + d] = scratch[d] - scratch[d].max(0.0);
         }
         let reach = (10 * MAX_DEGREE) as f32 * (open - one) + 10.0 * goal + prefix;
         output[REACHED] += step(reach, one) - reached.max(0.0);

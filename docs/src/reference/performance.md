@@ -60,6 +60,12 @@ the four-goal baseline repeats BFS to the nearest unvisited goal.
 | Backtracker 32×32 | 1 | 148 | 12,324.233 | 2,788.006 | 1.578 | 1.592 |
 | Backtracker 32×32 | 4 | 252 | 20,985.182 | 4,643.779 | 2.893 | 3.313 |
 
+Separating the ordered prefix sum from the eight pointer updates lets the
+compiler emit packed `f32` ReLUs (`maxps` in the x86-64 release build) without
+changing summation order or requiring target-specific intrinsics. In a pinned
+before/after run, the 32×32 open, backtracker, and four-goal backtracker cases
+fell from 1,186 / 2,788 / 4,678 µs to 903 / 2,186 / 3,571 µs respectively.
+
 The transformer evaluates attention and the MLP on every cell for each distance
 layer of each leg, including walls. Queue BFS processes only its frontier.
 `Model::solve` bypasses search entirely on these open squares; its sub-microsecond
