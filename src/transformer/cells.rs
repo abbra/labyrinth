@@ -2,13 +2,9 @@ use super::block::Block;
 use crate::{Cell, MAX_DEGREE, Maze};
 use std::arch::x86_64::*;
 use std::array;
+use std::collections::HashMap;
 
 const LANES: usize = 8;
-
-struct Slot {
-    keys: __m256i,
-    weights: [__m256; MAX_DEGREE],
-}
 
 /// # Safety
 /// Requires AVX2. The caller limits cell count to the signed gather index range.
@@ -29,8 +25,10 @@ pub(super) fn solve(block: &Block, maze: &Maze) -> Option<Vec<usize>> {
             _mm256_max_ps(_mm256_sub_ps(x, _mm256_set1_ps(5.5)), zero),
         )
     };
-    let mut slots = Vec::new();
-    let mut ends = vec![0];
+    let mut keys = Vec::new();
+    let mut weights = Vec::new();
+    let mut patterns = HashMap::new();
+    let mut batch_layout = Vec::with_capacity(batches);
     let mut open = Vec::with_capacity(batches);
     let mut goal = vec![[0.0; LANES]; batches];
     for (b, cells) in maze.cells().chunks(LANES).enumerate() {
@@ -47,31 +45,28 @@ pub(super) fn solve(block: &Block, maze: &Maze) -> Option<Vec<usize>> {
         for (l, cell) in cells.iter().enumerate() {
             goal[b][l] = f32::from(*cell == Cell::Goal);
         }
-        let longest = neighbours
-            .iter()
-            .copied()
-            .max_by_key(|s| s.len())
-            .unwrap_or(&[]);
-        for (k, _) in longest.iter().enumerate() {
-            slots.push(Slot {
-                // SAFETY: the index array spans exactly one unaligned vector.
-                keys: unsafe {
-                    _mm256_loadu_si256(
-                        array::from_fn::<_, LANES, _>(|l| {
-                            neighbours[l].get(k).copied().unwrap_or(n) as i32
-                        })
-                        .as_ptr()
-                        .cast(),
-                    )
-                },
-                weights: array::from_fn(|h| {
+        // Batches with the same lane degrees have identical attention weights.
+        let degrees = neighbours.map(|row| row.len() as u8);
+        let count = usize::from(*degrees.iter().max().unwrap());
+        let offset = *patterns.entry(degrees).or_insert_with(|| {
+            let offset = weights.len();
+            weights.extend((0..count).map(|k| {
+                array::from_fn::<_, MAX_DEGREE, _>(|h| {
                     pack(array::from_fn(|l| {
-                        block.probabilities[neighbours[l].len()][k][h]
+                        block.probabilities[usize::from(degrees[l])][k][h]
                     }))
-                }),
-            });
+                })
+            }));
+            offset
+        });
+        let start = keys.len();
+        for k in 0..count {
+            let indices: [i32; LANES] =
+                array::from_fn(|l| neighbours[l].get(k).copied().unwrap_or(n) as i32);
+            // SAFETY: the index array spans exactly one unaligned vector.
+            keys.push(unsafe { _mm256_loadu_si256(indices.as_ptr().cast()) });
         }
-        ends.push(slots.len());
+        batch_layout.push((start..keys.len(), offset));
     }
     // The last element (or the first padding lane) supplies zero for absent keys.
     let mut reached = vec![0.0; batches * LANES + 1];
@@ -87,12 +82,12 @@ pub(super) fn solve(block: &Block, maze: &Maze) -> Option<Vec<usize>> {
         }
         loop {
             let mut changed = zero;
-            for b in 0..batches {
+            for (b, (range, offset)) in batch_layout.iter().enumerate() {
                 let mut heads = [zero; MAX_DEGREE];
-                for slot in &slots[ends[b]..ends[b + 1]] {
+                for (&indices, row) in keys[range.clone()].iter().zip(&weights[*offset..]) {
                     // SAFETY: each index is a maze neighbour or n, both within reached.
-                    let values = unsafe { _mm256_i32gather_ps::<4>(reached.as_ptr(), slot.keys) };
-                    for (head, weight) in heads.iter_mut().zip(slot.weights) {
+                    let values = unsafe { _mm256_i32gather_ps::<4>(reached.as_ptr(), indices) };
+                    for (head, &weight) in heads.iter_mut().zip(row) {
                         *head = _mm256_add_ps(*head, _mm256_mul_ps(values, weight));
                     }
                 }

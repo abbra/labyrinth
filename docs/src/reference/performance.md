@@ -75,8 +75,20 @@ portable kernel. No `RUSTFLAGS` are needed.
 
 On the same 32×32 open, backtracker and four-goal workloads, cell SIMD took
 213 / 456 / 796 µs versus 847 / 2,105 / 3,293 µs for head SIMD, including
-packing time. The tradeoff is memory: each occupied slot of an eight-cell
-batch uses 288 bytes for indices and weights.
+packing time. That version duplicated 256 bytes of weights alongside 32 bytes
+of indices per occupied slot in each eight-cell batch. The current kernel keeps
+the indices per batch but shares weights across batches with the same ordered
+neighbour counts. Only setup uses a hash table; each layer reads the shared
+weights by offset.
+
+On a 512×512 open square, six degree patterns need only 5.25 KiB of packed
+weight data instead of nearly 32 MiB. In a pinned before/after comparison,
+median solve time fell from 1.650 to 0.818 seconds (three samples, packing
+included). The fraction of L2 fills served by local memory fell from 79.9%
+to 23.6% (`l2_fill_rsp_src.dram_io_near / l2_fill_rsp_src.all`).
+The seed-1 backtracker fell from 25.98 to 13.65 seconds and its four-goal
+variant from 98.43 to 48.01 seconds (one sample each). Irregular graphs with
+few repeated degree patterns need not see the same savings.
 
 The transformer evaluates attention and the MLP on every cell for each distance
 layer of each leg, including walls. Queue BFS processes only its frontier.
