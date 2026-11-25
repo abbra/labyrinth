@@ -8,6 +8,7 @@ const LANES: usize = 8;
 type WeightRow = [__m256; MAX_DEGREE];
 const SHARED_ROWS: usize = (8 << 20) / size_of::<WeightRow>();
 const LOCAL_ROWS: usize = (64 << 10) / size_of::<WeightRow>();
+const SAMPLE_BATCHES: usize = 64;
 
 /// # Safety
 /// Requires AVX2. The caller limits cell count to the signed gather index range.
@@ -33,6 +34,8 @@ pub(super) fn solve(block: &Block, maze: &Maze) -> Option<Vec<usize>> {
     let mut patterns = HashMap::new();
     let mut window_end = SHARED_ROWS;
     let mut recent_hits = 0;
+    let mut distant_hits = 0;
+    let mut last_offset = 0usize;
     let mut batch_layout = Vec::with_capacity(batches);
     let mut open = Vec::with_capacity(batches);
     let mut goal = vec![[0.0; LANES]; batches];
@@ -56,6 +59,15 @@ pub(super) fn solve(block: &Block, maze: &Maze) -> Option<Vec<usize>> {
         // Extend a window when short-distance hits saved at least half as many
         // rows as we appended. Otherwise restart it to keep cold reads streaming.
         let previous_len = weights.len();
+        // A shuffled pass over already packed weights can stop table growth.
+        if b.is_multiple_of(SAMPLE_BATCHES) {
+            if distant_hits > SAMPLE_BATCHES / 2 {
+                patterns.clear();
+                recent_hits = 0;
+                window_end = previous_len + LOCAL_ROWS;
+            }
+            distant_hits = 0;
+        }
         if previous_len > window_end {
             let sample = if window_end == SHARED_ROWS {
                 SHARED_ROWS
@@ -64,6 +76,7 @@ pub(super) fn solve(block: &Block, maze: &Maze) -> Option<Vec<usize>> {
             };
             if recent_hits < sample / 2 {
                 patterns.clear();
+                distant_hits = 0;
             }
             recent_hits = 0;
             window_end = weights.len() + LOCAL_ROWS;
@@ -82,6 +95,13 @@ pub(super) fn solve(block: &Block, maze: &Maze) -> Option<Vec<usize>> {
         if offset < previous_len && previous_len - offset <= LOCAL_ROWS {
             recent_hits += count;
         }
+        if previous_len > SHARED_ROWS
+            && offset < previous_len
+            && offset.abs_diff(last_offset) > LOCAL_ROWS
+        {
+            distant_hits += 1;
+        }
+        last_offset = offset;
         let start = keys.len();
         for k in 0..count {
             let indices: [i32; LANES] =

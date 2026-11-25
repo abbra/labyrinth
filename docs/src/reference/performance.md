@@ -109,6 +109,16 @@ In a nine-pass comparison, adapting those windows reduced the median for
 Scattered pairs took 175.5 versus 175.4 ms with fixed windows; on the open
 512×512 square, adaptive took 821 versus 812 ms. All timed routes matched BFS.
 
+Shuffling already packed patterns can stop table growth entirely. Once packed
+weights exceed 8 MiB, the packer also counts hits that jump more than 64 KiB
+from the preceding batch's offset. At each 64-batch boundary it clears the
+lookup if more than 32 batches made such jumps since the last boundary or clear.
+On adjacent pairs followed by shuffled reads of the same 8,192 patterns, this
+trigger fired 64 batches after the switch. Median solve time over nine passes
+fell from 215.3 to 147.1 ms (fixed windows: 142.8 ms). On 16,384 clustered
+pairs the trigger never fired: 108.5 ms versus 110.5 ms without it and 119.2 ms
+with fixed windows. These thresholds describe one CPU and one graph topology.
+
 The transformer evaluates attention and the MLP on every cell for each distance
 layer of each leg, including walls. Queue BFS processes only its frontier.
 `Model::solve` bypasses search entirely on these open squares; its sub-microsecond
