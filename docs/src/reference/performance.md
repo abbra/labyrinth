@@ -76,8 +76,10 @@ With a single goal, `Model::solve` grows waves from both the goal and the
 start, widening whichever frontier is smaller, and then rebuilds the route
 `Model::trace` would choose. In an earlier run of the same five-seed sweep the
 goal-only flood took 2,865.8 µs at 512×512 and 23,859.5 µs at 1024×1024. On
-backtracker mazes `solve` still trails queue BFS by roughly 1.1–1.5×, and
-repeated sweeps move the 1024×1024 ratio by about ±0.15×.
+backtracker mazes `solve` still trails queue BFS. Across seven sweeps the
+`solve`/queue BFS ratio stayed near 1.6× at 64×64, 1.5× at 128×128 and 1.3×
+at 256×256, moved between 0.8× and 1.1× at 512×512, and ranged 1.18–1.36×
+(median 1.30×) at 1024×1024.
 
 ## Server: 321×321 boards
 
