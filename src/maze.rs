@@ -27,8 +27,6 @@ pub struct Maze {
     /// Neighbours of cell `i` are `targets[offsets[i]..offsets[i + 1]]`.
     offsets: Vec<usize>,
     targets: Vec<usize>,
-    /// Reverse-neighbour slot for each target, parallel to `targets`.
-    reverse_slots: Vec<u8>,
     open_square: Option<(usize, Vec<u8>)>,
     start: usize,
     goals: Vec<usize>,
@@ -71,21 +69,14 @@ impl Maze {
         }
         let mut fill = offsets[..n].to_vec();
         let mut targets = vec![0; 2 * edges.len()];
-        let mut reverse_slots = vec![0; targets.len()];
         for &(a, b) in &edges {
-            if targets[offsets[a]..fill[a]].contains(&b)
-                || targets[offsets[b]..fill[b]].contains(&a)
-            {
-                return Err(MazeError::DuplicateEdge { edge: (a, b) });
+            for (from, to) in [(a, b), (b, a)] {
+                if targets[offsets[from]..fill[from]].contains(&to) {
+                    return Err(MazeError::DuplicateEdge { edge: (a, b) });
+                }
+                targets[fill[from]] = to;
+                fill[from] += 1;
             }
-            let ab = fill[a];
-            let ba = fill[b];
-            targets[ab] = b;
-            targets[ba] = a;
-            reverse_slots[ab] = (ba - offsets[b]) as u8;
-            reverse_slots[ba] = (ab - offsets[a]) as u8;
-            fill[a] += 1;
-            fill[b] += 1;
         }
         let find = |kind| {
             let mut found = (0..n).filter(|&i| cells[i] == kind);
@@ -108,7 +99,6 @@ impl Maze {
             cells,
             offsets,
             targets,
-            reverse_slots,
             open_square,
             start,
             goals,
@@ -127,12 +117,6 @@ impl Maze {
     /// Panics if `cell` is not below `cells().len()`.
     pub fn neighbours(&self, cell: usize) -> &[usize] {
         &self.targets[self.offsets[cell]..self.offsets[cell + 1]]
-    }
-
-    pub(crate) fn neighbours_with_reverse_slots(&self, cell: usize) -> (&[usize], &[u8]) {
-        let start = self.offsets[cell];
-        let end = self.offsets[cell + 1];
-        (&self.targets[start..end], &self.reverse_slots[start..end])
     }
 
     /// Id of the start cell.

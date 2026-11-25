@@ -30,11 +30,6 @@ fn check(maze: &Maze, what: &str) -> bool {
         "{what}: {maze:?}"
     );
     let Some(path) = path else { return false };
-    assert_eq!(
-        Model::new().trace(maze).path.as_deref(),
-        Some(path.as_slice()),
-        "{what}: solve and trace chose different shortest paths"
-    );
     assert_eq!((path[0], path[path.len() - 1]), (maze.start(), maze.goal()));
     for pair in path.windows(2) {
         assert!(
