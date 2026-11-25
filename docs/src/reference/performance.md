@@ -53,16 +53,16 @@ uses Manhattan distance for the square-grid heuristic.
 
 | Workload | Cells | `Model::solve` (µs) | Queue BFS (µs) | Bidirectional BFS (µs) | A* (µs) |
 |----------|------:|-------------------:|---------------:|-----------------------:|--------:|
-| Open square 64×64 | 4,096 | 0.1 | 24.0 | 28.8 | 100.9 |
-| Backtracker 64×64 | 4,096 | 9.9 | 6.7 | 8.4 | 13.0 |
-| Open square 128×128 | 16,384 | 0.2 | 82.7 | 100.5 | 432.5 |
-| Backtracker 128×128 | 16,384 | 38.8 | 28.1 | 39.7 | 55.2 |
-| Open square 256×256 | 65,536 | 0.3 | 407.9 | 415.7 | 1,988.6 |
-| Backtracker 256×256 | 65,536 | 301.2 | 293.2 | 323.0 | 335.9 |
-| Open square 512×512 | 262,144 | 0.6 | 2,953.0 | 4,060.4 | 9,068.8 |
-| Backtracker 512×512 | 262,144 | 1,014.1 | 1,095.5 | 1,327.8 | 1,502.7 |
-| Open square 1024×1024 | 1,048,576 | 1.3 | 23,641.7 | 20,457.2 | 40,678.0 |
-| Backtracker 1024×1024 | 1,048,576 | 10,776.7 | 10,226.9 | 13,612.0 | 14,140.9 |
+| Open square 64×64 | 4,096 | 0.1 | 17.6 | 21.7 | 75.5 |
+| Backtracker 64×64 | 4,096 | 9.0 | 6.7 | 8.2 | 13.0 |
+| Open square 128×128 | 16,384 | 0.2 | 79.2 | 98.4 | 427.9 |
+| Backtracker 128×128 | 16,384 | 35.7 | 27.9 | 39.5 | 55.3 |
+| Open square 256×256 | 65,536 | 0.3 | 413.6 | 416.1 | 1,980.5 |
+| Backtracker 256×256 | 65,536 | 258.9 | 298.6 | 332.1 | 345.6 |
+| Open square 512×512 | 262,144 | 0.7 | 2,593.1 | 3,696.3 | 8,912.4 |
+| Backtracker 512×512 | 262,144 | 891.9 | 1,091.7 | 1,426.6 | 1,500.1 |
+| Open square 1024×1024 | 1,048,576 | 1.3 | 24,268.1 | 20,696.7 | 40,712.6 |
+| Backtracker 1024×1024 | 1,048,576 | 9,891.3 | 10,239.3 | 12,632.2 | 13,335.9 |
 
 The comparison sweep was rerun on 2026-11-25. Each sample uses one calibration
 solve to choose a repeated batch targeting 10 ms (capped at 1,000,000 solves);
@@ -87,16 +87,15 @@ ratios over three interleaved runs to 1.71–1.73× at 64×64, 1.53–1.57× at
 level holds a single route cell, so only a tie needs the forward walk, then
 gave 1.41–1.47× at 64×64, 1.32–1.36× at 128×128, 1.03–1.04× at 256×256,
 0.90–0.91× at 512×512 and 0.91–1.07× at 1024×1024 over three interleaved
-runs. The table above includes both changes; its ratios (1.48×, 1.38×, 1.03×,
-0.93× and 1.05×) fall in or next to those ranges. At 1024×1024 run-to-run
-noise is about ±10%, so `solve` and queue BFS are effectively tied there.
-Storing each start-side cell's parent slot in its spare state bits, so a
-tie-free route is read by following one pointer per step instead of scanning
-every neighbour, then gave 1.34–1.35× at 64×64, 1.26–1.28× at 128×128,
-0.86–0.87× at 256×256, 0.78–0.80× at 512×512 and 0.93–1.02× at 1024×1024
-over three interleaved runs (previous version in the same runs: 1.44–1.46×,
-1.26–1.36×, 1.02–1.03×, 0.89–0.91× and 1.01–1.07×). The table predates this
-change.
+runs. At 1024×1024 run-to-run noise is about ±10%, so `solve` and queue BFS
+are effectively tied there. Storing each start-side cell's parent slot in its
+spare state bits, so a tie-free route is read by following one pointer per
+step instead of scanning every neighbour, then gave 1.34–1.35× at 64×64,
+1.26–1.28× at 128×128, 0.86–0.87× at 256×256, 0.78–0.80× at 512×512 and
+0.93–1.02× at 1024×1024 over three interleaved runs (previous version in the
+same runs: 1.44–1.46×, 1.26–1.36×, 1.02–1.03×, 0.89–0.91× and 1.01–1.07×).
+The table above includes all three changes; its ratios (1.34×, 1.28×, 0.87×,
+0.82× and 0.97×) fall in or next to those ranges.
 
 ## Server: 321×321 boards
 
