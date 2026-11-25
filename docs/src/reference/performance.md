@@ -90,6 +90,13 @@ gave 1.41–1.47× at 64×64, 1.32–1.36× at 128×128, 1.03–1.04× at 256×2
 runs. The table above includes both changes; its ratios (1.48×, 1.38×, 1.03×,
 0.93× and 1.05×) fall in or next to those ranges. At 1024×1024 run-to-run
 noise is about ±10%, so `solve` and queue BFS are effectively tied there.
+Storing each start-side cell's parent slot in its spare state bits, so a
+tie-free route is read by following one pointer per step instead of scanning
+every neighbour, then gave 1.34–1.35× at 64×64, 1.26–1.28× at 128×128,
+0.86–0.87× at 256×256, 0.78–0.80× at 512×512 and 0.93–1.02× at 1024×1024
+over three interleaved runs (previous version in the same runs: 1.44–1.46×,
+1.26–1.36×, 1.02–1.03×, 0.89–0.91× and 1.01–1.07×). The table predates this
+change.
 
 ## Server: 321×321 boards
 
