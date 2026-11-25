@@ -53,16 +53,16 @@ uses Manhattan distance for the square-grid heuristic.
 
 | Workload | Cells | `Model::solve` (µs) | Queue BFS (µs) | Bidirectional BFS (µs) | A* (µs) |
 |----------|------:|-------------------:|---------------:|-----------------------:|--------:|
-| Open square 64×64 | 4,096 | 0.1 | 17.6 | 21.7 | 75.5 |
-| Backtracker 64×64 | 4,096 | 9.0 | 6.7 | 8.2 | 13.0 |
-| Open square 128×128 | 16,384 | 0.2 | 79.2 | 98.4 | 427.9 |
-| Backtracker 128×128 | 16,384 | 35.7 | 27.9 | 39.5 | 55.3 |
-| Open square 256×256 | 65,536 | 0.3 | 413.6 | 416.1 | 1,980.5 |
-| Backtracker 256×256 | 65,536 | 258.9 | 298.6 | 332.1 | 345.6 |
-| Open square 512×512 | 262,144 | 0.7 | 2,593.1 | 3,696.3 | 8,912.4 |
-| Backtracker 512×512 | 262,144 | 891.9 | 1,091.7 | 1,426.6 | 1,500.1 |
-| Open square 1024×1024 | 1,048,576 | 1.3 | 24,268.1 | 20,696.7 | 40,712.6 |
-| Backtracker 1024×1024 | 1,048,576 | 9,891.3 | 10,239.3 | 12,632.2 | 13,335.9 |
+| Open square 64×64 | 4,096 | 0.1 | 23.5 | 28.6 | 99.4 |
+| Backtracker 64×64 | 4,096 | 7.9 | 6.8 | 8.3 | 13.2 |
+| Open square 128×128 | 16,384 | 0.2 | 79.1 | 101.3 | 422.8 |
+| Backtracker 128×128 | 16,384 | 31.9 | 28.5 | 39.4 | 55.6 |
+| Open square 256×256 | 65,536 | 0.3 | 410.8 | 423.3 | 1,993.5 |
+| Backtracker 256×256 | 65,536 | 249.3 | 290.5 | 322.0 | 344.2 |
+| Open square 512×512 | 262,144 | 0.7 | 2,840.5 | 3,826.4 | 8,978.1 |
+| Backtracker 512×512 | 262,144 | 831.2 | 1,080.1 | 1,303.2 | 1,413.0 |
+| Open square 1024×1024 | 1,048,576 | 1.3 | 23,683.2 | 20,448.8 | 40,780.4 |
+| Backtracker 1024×1024 | 1,048,576 | 8,372.5 | 10,284.5 | 12,493.9 | 13,545.6 |
 
 The comparison sweep was rerun on 2026-11-25. Each sample uses one calibration
 solve to choose a repeated batch targeting 10 ms (capped at 1,000,000 solves);
@@ -94,14 +94,16 @@ step instead of scanning every neighbour, then gave 1.34–1.35× at 64×64,
 1.26–1.28× at 128×128, 0.86–0.87× at 256×256, 0.78–0.80× at 512×512 and
 0.93–1.02× at 1024×1024 over three interleaved runs (previous version in the
 same runs: 1.44–1.46×, 1.26–1.36×, 1.02–1.03×, 0.89–0.91× and 1.01–1.07×).
-The table above includes all three changes; its ratios (1.34×, 1.28×, 0.87×,
-0.82× and 0.97×) fall in or next to those ranges. Recording each start-side
-cell's parent as an index into the wave-order list, instead of a neighbour slot,
-drops the slot lookup during the search and makes each route step one dependent
-load. Over three interleaved runs that gave 1.16–1.21× at 64×64, 1.07–1.12× at
-128×128, 0.85–0.87× at 256×256, 0.76–0.78× at 512×512 and 0.82–0.91× at
-1024×1024 (previous version in the same runs: 1.34–1.35×, 1.25–1.31×,
-0.87–0.89×, 0.79–0.82× and 0.94–0.98×). The table above predates this change.
+An earlier table, which included those three changes, showed ratios of 1.34×,
+1.28×, 0.87×, 0.82× and 0.97×, in or next to those ranges. Recording each
+start-side cell's parent as an index into the wave-order list, instead of a
+neighbour slot, drops the slot lookup during the search and makes each route
+step one dependent load. Over three interleaved runs that gave 1.16–1.21× at
+64×64, 1.07–1.12× at 128×128, 0.85–0.87× at 256×256, 0.76–0.78× at 512×512
+and 0.82–0.91× at 1024×1024 (previous version in the same runs: 1.34–1.35×,
+1.25–1.31×, 0.87–0.89×, 0.79–0.82× and 0.94–0.98×). The table above includes
+all four changes; its ratios (1.16×, 1.12×, 0.86×, 0.77× and 0.81×) fall in or
+next to those ranges.
 
 ## Server: 321×321 boards
 
