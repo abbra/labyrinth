@@ -24,10 +24,13 @@ lists use compressed sparse row (CSR) storage: one `offsets` array and one
 
 ### Solve and trace
 
-`Model::solve` uses staged BFS frontiers for general graphs. For a single-goal,
-fully open square grid, `Maze` caches directional tie-break preferences and
-`solve` constructs a Manhattan-shortest path directly; it does not run the
-trace loop.
+`Model::solve` floods from the goals with staged BFS frontiers when there are
+several goals. With one goal, `meet_in_middle` grows waves from the start and
+the goal and rebuilds the route `trace` would choose (see
+[How the Model Works](../reference/model.md#single-goal-search)). For a
+single-goal, fully open square grid, `Maze` caches directional tie-break
+preferences and `solve` constructs a Manhattan-shortest path directly. No
+`solve` strategy runs the trace loop.
 
 `Model::trace` always runs the fixed-rule dirty-cell loop:
 

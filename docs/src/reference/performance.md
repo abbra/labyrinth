@@ -53,18 +53,19 @@ uses Manhattan distance for the square-grid heuristic.
 
 | Workload | Cells | `Model::solve` (µs) | Queue BFS (µs) | Bidirectional BFS (µs) | A* (µs) |
 |----------|------:|-------------------:|---------------:|-----------------------:|--------:|
-| Open square 64×64 | 4,096 | 0.1 | 23.5 | 28.6 | 99.4 |
-| Backtracker 64×64 | 4,096 | 7.9 | 6.8 | 8.3 | 13.2 |
-| Open square 128×128 | 16,384 | 0.2 | 79.1 | 101.3 | 422.8 |
-| Backtracker 128×128 | 16,384 | 31.9 | 28.5 | 39.4 | 55.6 |
-| Open square 256×256 | 65,536 | 0.3 | 410.8 | 423.3 | 1,993.5 |
-| Backtracker 256×256 | 65,536 | 249.3 | 290.5 | 322.0 | 344.2 |
-| Open square 512×512 | 262,144 | 0.7 | 2,840.5 | 3,826.4 | 8,978.1 |
-| Backtracker 512×512 | 262,144 | 831.2 | 1,080.1 | 1,303.2 | 1,413.0 |
-| Open square 1024×1024 | 1,048,576 | 1.3 | 23,683.2 | 20,448.8 | 40,780.4 |
-| Backtracker 1024×1024 | 1,048,576 | 8,372.5 | 10,284.5 | 12,493.9 | 13,545.6 |
+| Open square 64×64 | 4,096 | 0.1 | 17.5 | 21.7 | 73.6 |
+| Backtracker 64×64 | 4,096 | 7.1 | 6.8 | 8.3 | 13.0 |
+| Open square 128×128 | 16,384 | 0.2 | 82.9 | 99.6 | 425.5 |
+| Backtracker 128×128 | 16,384 | 28.8 | 28.4 | 38.7 | 55.6 |
+| Open square 256×256 | 65,536 | 0.4 | 396.2 | 416.1 | 1,958.3 |
+| Backtracker 256×256 | 65,536 | 240.9 | 291.4 | 317.9 | 335.2 |
+| Open square 512×512 | 262,144 | 0.7 | 2,504.8 | 3,903.3 | 8,900.3 |
+| Backtracker 512×512 | 262,144 | 802.6 | 1,114.3 | 1,364.3 | 1,486.6 |
+| Open square 1024×1024 | 1,048,576 | 1.3 | 24,268.8 | 21,155.4 | 40,476.4 |
+| Backtracker 1024×1024 | 1,048,576 | 8,270.1 | 9,635.1 | 13,846.0 | 13,222.6 |
 
-The comparison sweep was rerun on 2026-11-25. Each sample uses one calibration
+The comparison sweep was rerun on 2026-11-25, pinned to one CPU core with
+`taskset -c 2`. Each sample uses one calibration
 solve to choose a repeated batch targeting 10 ms (capped at 1,000,000 solves);
 reported timings are per-call batch averages. Per maze, values are medians of
 nine samples with solver order rotated, printed to 0.1 µs. `0.0` means below
@@ -101,9 +102,17 @@ neighbour slot, drops the slot lookup during the search and makes each route
 step one dependent load. Over three interleaved runs that gave 1.16–1.21× at
 64×64, 1.07–1.12× at 128×128, 0.85–0.87× at 256×256, 0.76–0.78× at 512×512
 and 0.82–0.91× at 1024×1024 (previous version in the same runs: 1.34–1.35×,
-1.25–1.31×, 0.87–0.89×, 0.79–0.82× and 0.94–0.98×). The table above includes
-all four changes; its ratios (1.16×, 1.12×, 0.86×, 0.77× and 0.81×) fall in or
-next to those ranges.
+1.25–1.31×, 0.87–0.89×, 0.79–0.82× and 0.94–0.98×). An intermediate table
+with all four changes showed 1.16×, 1.12×, 0.86×, 0.77× and 0.81×. Reserving
+the wave-order and parent lists for every cell up front, instead of growing
+them, and inlining the goal-side wave step, which corridor mazes run about once
+per cell, then gave 1.06× at 64×64, 0.99–1.01× at 128×128, 0.83–0.84× at
+256×256, 0.74× at 512×512 and 0.80–0.92× at 1024×1024 over three interleaved
+runs (previous version in the same runs: 1.16–1.17×, 1.09–1.10×, 0.86–0.87×,
+0.76–0.77× and 0.89–0.91×). Most of the small-maze gain came from the
+reservation; inlining alone gave about 2–3%. The reservation costs 12 bytes per
+cell. The table above includes all five changes; its ratios are 1.04×, 1.01×,
+0.83×, 0.72× and 0.86×.
 
 ## Server: 321×321 boards
 

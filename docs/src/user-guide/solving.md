@@ -54,9 +54,12 @@ Use `reached_at` to show the search as an animation. The web UI does this.
 
 ## Execution
 
-`Model::solve` and `Model::trace` are sequential. `solve` uses staged BFS
-frontiers for general graphs and a direct cached-order Manhattan path for a
-single-goal, fully open square grid. `trace` always evaluates dirty cells in
+`Model::solve` and `Model::trace` are sequential. `solve` builds a direct
+cached-order Manhattan path for a single-goal, fully open square grid, grows
+waves from both ends for other single-goal mazes, and floods from the goals
+with staged BFS frontiers when there are several goals; see
+[How the Model Works](../reference/model.md#single-goal-search). `trace` always
+evaluates dirty cells in
 the fixed-rule loop. The web server runs each solve on a blocking thread and
 allows at most two concurrent solves.
 

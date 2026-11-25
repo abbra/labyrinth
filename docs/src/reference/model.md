@@ -7,14 +7,59 @@ neighbour that first reached it, and `9` marks a goal. The trace floods
 outward from all goals, updates only dirty cells, then builds a route from the
 start through every goal.
 
-`Model::solve` returns the same route without producing trace data. It uses
-staged BFS frontiers for general graphs and directly constructs a
-Manhattan-shortest route for a single-goal, fully open square grid, using
-cached neighbour-order preferences to resolve ties.
+`Model::solve` returns the same route without producing trace data. It has
+three strategies:
 
-The sections below describe the equivalent generated-transformer
-representation. `Model::new` does not generate or store these weights;
-`parameter_count()` reports their count, 1,472.
+- **Open square.** A single-goal, fully open square grid gets a
+  Manhattan-shortest route built directly, using cached neighbour-order
+  preferences to resolve ties.
+- **One goal.** Waves grow from both ends until they meet; see
+  [Single-goal search](#single-goal-search).
+- **Several goals.** The goal flood that `trace` runs, using staged BFS
+  frontiers. The route is then read from the pointers.
+
+From [Equivalent transformer](#equivalent-transformer) on, this page describes
+the equivalent generated-transformer representation. `Model::new` does not
+generate or store these weights; `parameter_count()` reports their count,
+1,472.
+
+## Single-goal search
+
+`Model::solve` grows whole BFS waves from the goal and from the start. Each
+step widens whichever frontier is smaller; on a tie it widens the start side.
+The search returns no route when either frontier runs empty.
+
+- **Goal side.** Each newly reached cell stores the same pointer `trace`
+  would give it: the lowest neighbour slot that the previous goal wave
+  reached. A pending bit, set while a wave is being built, stops a cell from
+  pointing at another cell of the same wave.
+- **Start side.** Each cell stores a flag, its depth from the start modulo 3,
+  and a tie bit. The tie bit is set when a second cell of the previous wave
+  also reaches it. The search also keeps every start-side cell in wave order,
+  with each cell's parent recorded as an index into that list. Both lists are
+  reserved for every cell up front, 12 bytes per cell.
+
+The search stops as soon as one side touches the other. The meeting cells are
+the cells of the last start-side wave that touch a settled goal-side cell.
+
+`trace` follows, from every cell, the lowest neighbour slot one step nearer
+the goal. To return that same route, `solve` rebuilds the start-side part in
+one of two ways:
+
+1. **Parent chain.** This applies when there is exactly one meeting cell and
+   no cell on its parent chain carries the tie bit. Then only one shortest
+   route reaches the meeting cell, and `solve` reads it back with one load per
+   step.
+2. **Marked walk.** Otherwise, `solve` walks back from the meeting cells one
+   depth at a time. At each step it marks as on route every neighbour that
+   carries the depth tag one level nearer the start. It then walks forward
+   from the start, each step taking the lowest neighbour slot that is marked
+   and one level deeper.
+
+From the last start-side cell, the route steps to its lowest-slot goal-side
+neighbour and follows the goal-side pointers to the goal. On backtracker
+mazes this is several times faster than flooding from the goal alone; see
+[Performance Results](performance.md#comparing-solve-algorithms).
 
 ## Equivalent transformer
 
