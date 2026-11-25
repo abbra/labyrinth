@@ -207,6 +207,8 @@ fn goal_side(state: State) -> bool {
 
 /// Grows the goal flood by one wave; stops early and returns `true` on touching a
 /// start-side cell.
+// Corridor mazes run about one wave per cell, so the call itself is a hot cost.
+#[inline(always)]
 fn grow_goal_wave(
     maze: &Maze,
     x: &mut [State],
@@ -252,8 +254,11 @@ fn meet_in_middle(maze: &Maze, mut x: Vec<State>, mut back: Vec<usize>) -> Optio
     x[start] = FORWARD;
     // Start-side cells in wave order, with the `order` index of the cell that first
     // reached each; level `t` begins at `levels[t]`.
-    let mut order = vec![start];
-    let mut parents = vec![0u32];
+    // Presized: in corridor mazes growth reallocations cost more than the search.
+    let mut order = Vec::with_capacity(x.len());
+    order.push(start);
+    let mut parents = Vec::with_capacity(x.len());
+    parents.push(0u32);
     let mut levels = vec![0];
     let mut candidates = Vec::new();
     let mut goal_waves = 0;
