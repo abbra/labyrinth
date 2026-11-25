@@ -95,7 +95,13 @@ step instead of scanning every neighbour, then gave 1.34–1.35× at 64×64,
 0.93–1.02× at 1024×1024 over three interleaved runs (previous version in the
 same runs: 1.44–1.46×, 1.26–1.36×, 1.02–1.03×, 0.89–0.91× and 1.01–1.07×).
 The table above includes all three changes; its ratios (1.34×, 1.28×, 0.87×,
-0.82× and 0.97×) fall in or next to those ranges.
+0.82× and 0.97×) fall in or next to those ranges. Recording each start-side
+cell's parent as an index into the wave-order list, instead of a neighbour slot,
+drops the slot lookup during the search and makes each route step one dependent
+load. Over three interleaved runs that gave 1.16–1.21× at 64×64, 1.07–1.12× at
+128×128, 0.85–0.87× at 256×256, 0.76–0.78× at 512×512 and 0.82–0.91× at
+1024×1024 (previous version in the same runs: 1.34–1.35×, 1.25–1.31×,
+0.87–0.89×, 0.79–0.82× and 0.94–0.98×). The table above predates this change.
 
 ## Server: 321×321 boards
 

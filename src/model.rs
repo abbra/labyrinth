@@ -18,18 +18,15 @@ const MODEL_D: usize = 4 + 2 * K;
 type State = u8;
 // Stage one wave without letting its rule outputs affect other candidates.
 const PENDING: State = 1 << 7;
-// Start-side cells: this flag plus their depth from the start, modulo 3, in bits 0-1,
-// and in bits 2-4 the neighbour slot of the cell that first reached them.
+// Start-side cells: this flag plus their depth from the start, modulo 3, in bits 0-1.
 const FORWARD: State = 1 << 6;
-const SLOT_SHIFT: u32 = 2;
 // Start-side cells reached from more than one cell of the previous wave.
 const TIED: State = PENDING;
 // Start-side cells that lie on a shortest route to the goal.
 const ON_ROUTE: State = 1 << 5;
-// Start-side bits that identify a cell's wave and route mark, without slot or tie.
+// Start-side bits that identify a cell's wave and route mark, without the tie flag.
 const WAVE: State = FORWARD | ON_ROUTE | 3;
 const _: () = assert!(K + 1 < ON_ROUTE as usize);
-const _: () = assert!(((K - 1) << SLOT_SHIFT) < ON_ROUTE as usize);
 
 /// The fixed-rule maze-solving model.
 ///
@@ -246,13 +243,17 @@ fn grow_goal_wave(
 /// cells the route takes the lowest slot whose neighbour is one step closer to the
 /// goal, which is the neighbour one step further from the start that still lies on a
 /// shortest route. When one cell meets the goal side and no cell back to the start was
-/// reached twice, that route is the parent-slot chain; otherwise route cells are marked
-/// level by level, walking back from the meeting cells, and walked forward.
+/// reached twice, that route follows the recorded parents; otherwise route cells are
+/// marked level by level, walking back from the meeting cells, and walked forward.
 fn meet_in_middle(maze: &Maze, mut x: Vec<State>, mut back: Vec<usize>) -> Option<Vec<usize>> {
+    // Parent indices into `order` are stored as `u32`.
+    assert!(u32::try_from(x.len()).is_ok(), "maze too large");
     let start = maze.start();
     x[start] = FORWARD;
-    // Start-side cells in wave order; level `t` begins at `levels[t]`.
+    // Start-side cells in wave order, with the `order` index of the cell that first
+    // reached each; level `t` begins at `levels[t]`.
     let mut order = vec![start];
+    let mut parents = vec![0u32];
     let mut levels = vec![0];
     let mut candidates = Vec::new();
     let mut goal_waves = 0;
@@ -271,21 +272,16 @@ fn meet_in_middle(maze: &Maze, mut x: Vec<State>, mut back: Vec<usize>) -> Optio
         }
         let tag = FORWARD | ((depth + 1) % 3) as State;
         for i in level_start..level_end {
-            let parent = order[i];
-            for &j in maze.neighbours(parent) {
+            for &j in maze.neighbours(order[i]) {
                 let state = x[j];
                 if goal_side(state) {
                     order.truncate(level_end);
                     break 'search;
                 }
                 if state == 0 && maze.cells()[j] != Cell::Wall {
-                    let slot = maze
-                        .neighbours(j)
-                        .iter()
-                        .position(|&n| n == parent)
-                        .expect("neighbours are mutual");
-                    x[j] = tag | (slot as State) << SLOT_SHIFT;
+                    x[j] = tag;
                     order.push(j);
+                    parents.push(i as u32);
                 } else if state & WAVE == tag {
                     x[j] |= TIED;
                 }
@@ -298,15 +294,17 @@ fn meet_in_middle(maze: &Maze, mut x: Vec<State>, mut back: Vec<usize>) -> Optio
     let last = levels.len() - 1;
     let mut route = candidates;
     route.clear();
-    for &cell in &order[levels[last]..] {
+    let mut meeting = 0;
+    for (k, &cell) in order.iter().enumerate().skip(levels[last]) {
         if maze.neighbours(cell).iter().any(|&j| goal_side(x[j])) {
+            meeting = k;
             route.push(cell);
         }
     }
     // The goal side adds at most one cell per goal wave plus the meeting cell.
     let capacity = last + goal_waves + 2;
     let chain = match route[..] {
-        [cell] => parent_chain(maze, &x, cell, last, capacity),
+        [_] => parent_chain(&x, &order, &parents, meeting, last, capacity),
         _ => None,
     };
     let mut path = match chain {
@@ -359,27 +357,28 @@ fn meet_in_middle(maze: &Maze, mut x: Vec<State>, mut back: Vec<usize>) -> Optio
     Some(path)
 }
 
-/// The start-side route ending at `cell`, `depth` steps from the start, following
-/// parent slots; `None` if a cell on it was reached twice, so another parent might be
-/// the one [`Model::trace`] picks.
+/// The start-side route ending at `order[k]`, `depth` steps from the start, following
+/// recorded parents; `None` if a cell on it was reached twice, so another parent might
+/// be the one [`Model::trace`] picks.
 fn parent_chain(
-    maze: &Maze,
     x: &[State],
-    mut cell: usize,
+    order: &[usize],
+    parents: &[u32],
+    mut k: usize,
     depth: usize,
     capacity: usize,
 ) -> Option<Vec<usize>> {
     let mut path = Vec::with_capacity(capacity);
     path.resize(depth + 1, 0);
     for step in (1..=depth).rev() {
-        let state = x[cell];
-        if state & TIED != 0 {
+        let cell = order[k];
+        if x[cell] & TIED != 0 {
             return None;
         }
         path[step] = cell;
-        cell = maze.neighbours(cell)[usize::from(state >> SLOT_SHIFT & 7)];
+        k = parents[k] as usize;
     }
-    path[0] = cell;
+    path[0] = order[k];
     Some(path)
 }
 
