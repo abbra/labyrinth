@@ -14,9 +14,10 @@ graph LR
 
 | File | Content |
 |------|---------|
-| `src/lib.rs` | Public exports |
+| `src/lib.rs` | `Solver` trait and public exports |
 | `src/maze.rs` | `Maze`, `Cell`, `MazeError`, `MAX_DEGREE`, text parser |
 | `src/model.rs` | `Model`, `Trace`, staged BFS solver and fixed-rule trace loop |
+| `src/transformer.rs`, `src/transformer/block.rs` | Transformer solve loop, structural attention and ReLU weights |
 
 The library has no geometry. A maze is cells plus edges. The neighbour
 lists use compressed sparse row (CSR) storage: one `offsets` array and one

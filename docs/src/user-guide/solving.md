@@ -19,6 +19,19 @@ Make one model and use it for all mazes. `Model` is `Clone`, `Send` and
 `model.parameter_count()` returns the equivalent transformer's parameter
 count, including biases. The value is 1,472.
 
+To run the weights instead of the optimized search, use `Transformer` with
+the `Solver` trait. Construct it once and reuse it:
+
+```rust
+# extern crate labyrinth;
+use labyrinth::{Maze, Solver, Transformer};
+
+let solver = Transformer::new();
+let maze: Maze = "S.G".parse()?;
+assert_eq!(solver.solve(&maze), Some(vec![0, 1, 2]));
+# Ok::<(), labyrinth::MazeError>(())
+```
+
 ## Get the path
 
 `solve` returns a route from the start through every goal:

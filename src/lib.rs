@@ -2,12 +2,26 @@
 //!
 //! [`Model::trace`] applies the rules directly to maze cells. [`Model::solve`]
 //! uses staged BFS frontiers, with a direct cached path for a single-goal,
-//! fully open square grid. The equivalent looped transformer has a fixed
-//! parameter count, reported by [`Model::parameter_count`]. The same rules
-//! support any [`Maze`] graph with at most [`MAX_DEGREE`] neighbours per cell.
+//! fully open square grid. [`Transformer`] instead evaluates the fixed weights
+//! of the looped graph transformer. Both implement [`Solver`] for any [`Maze`]
+//! graph with at most [`MAX_DEGREE`] neighbours per cell.
 
 mod maze;
 mod model;
+mod transformer;
 
 pub use maze::{Cell, MAX_DEGREE, Maze, MazeError};
 pub use model::{Model, Trace};
+pub use transformer::Transformer;
+
+/// Finds shortest-path legs using the maze's neighbour order to break ties.
+pub trait Solver {
+    /// Visits the nearest unvisited goal on each leg, or returns `None` if any is unreachable.
+    fn solve(&self, maze: &Maze) -> Option<Vec<usize>>;
+}
+
+impl Solver for Model {
+    fn solve(&self, maze: &Maze) -> Option<Vec<usize>> {
+        Model::solve(self, maze)
+    }
+}

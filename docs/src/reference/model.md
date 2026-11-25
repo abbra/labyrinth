@@ -18,10 +18,11 @@ two strategies:
   the goal that was reached. With several goals, `solve` then runs one queue
   BFS leg to the nearest unvisited goal at a time, as `trace` does.
 
-From [Equivalent transformer](#equivalent-transformer) on, this page describes
-the equivalent generated-transformer representation. `Model::new` does not
-generate or store these weights; `parameter_count()` reports their count,
-1,472.
+`Transformer::new` constructs the 1,472 weights described below. Its `Solver`
+implementation evaluates the block on every cell in every iteration, without
+the open-square or wave shortcuts. For each subsequent leg, it re-embeds the
+maze with only the unvisited goals flagged. `Model::parameter_count()` reports
+the same count without constructing those weights.
 
 ## Single-goal search
 
@@ -111,12 +112,11 @@ the key in the neighbour list of the query:
 | Neighbour in another slot | −50 |
 | Any other token | −∞ |
 
-The sink is an extra token with all values 0. When a cell has no
-neighbour in slot `k`, head `k` reads the sink. Thus it reads 0.
-
-Each head copies the `REACHED` value of its key into `NBR_REACHED[k]`.
-The difference of 25 between the bias ranks makes the leak onto the other
-keys smaller than f32 resolution.
+The sink is an extra token with all values 0. A head writes the
+softmax-weighted sum of its keys' `REACHED` values into `NBR_REACHED[k]`.
+With no neighbour in slot `k`, the sink gets the largest weight. The
+other keys can still contribute a small nonzero value, but the 25-point
+bias gap keeps that leakage below the MLP's decision threshold.
 
 ## Equivalent MLP
 

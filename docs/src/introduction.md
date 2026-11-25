@@ -6,10 +6,9 @@ construct transformer weights. `Model::trace` applies the rules directly and
 records search progress. `Model::solve` uses staged BFS frontiers for general
 mazes, and a cached direct path for a single-goal, fully open square grid.
 
-The runtime does not execute attention, an MLP or a residual stream.
-
-The equivalent transformer has 1,472 fixed parameters.
-`parameter_count()` reports that equivalent parameter count.
+`Transformer` runs the numerical reference model: eight attention heads and
+a ReLU MLP update each cell's residual stream. Its 1,472 weights are fixed
+across mazes. Both `Model` and `Transformer` implement `Solver`.
 
 ## What the model does
 
@@ -24,7 +23,7 @@ The equivalent transformer has 1,472 fixed parameters.
 
 | Crate | Purpose |
 |-------|---------|
-| **labyrinth** | Library. Maze graph, BFS solver and traced fixed-rule loop |
+| **labyrinth** | Library. Maze graph, optimized BFS solver, trace and transformer |
 | **labyrinth-server** | Web server. Board shapes, maze generators, HTTP API, browser UI |
 | **labyrinth-wasm** | Browser bindings. Local generation and solving for the WASM demo |
 
@@ -37,8 +36,8 @@ WASM bindings use wasm-bindgen and serde.
    Tests compare single-goal results with a reference BFS.
 2. **Maze-independent rules.** The same rules work for every maze size and
    tiling.
-3. **Discrete state.** The runtime uses integer state, not floating-point
-   activations.
+3. **Discrete state.** The optimized `Model` uses integer state instead of
+   the transformer's floating-point activations.
 4. **Speed.** General mazes use staged BFS frontiers; `trace` evaluates only
    dirty cells. The single-goal open-square `solve` path avoids the flood.
    See [Performance Results](reference/performance.md).
