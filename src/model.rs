@@ -239,6 +239,8 @@ fn grow_goal_wave(
 /// cells the route takes the lowest slot whose neighbour is one step closer to the
 /// goal, which is the neighbour one step further from the start that still lies on a
 /// shortest route; those are marked level by level, walking back from the meeting cells.
+/// While every level holds a single marked cell, those cells are the route and the
+/// forward walk is skipped.
 fn meet_in_middle(maze: &Maze, mut x: Vec<State>, mut back: Vec<usize>) -> Option<Vec<usize>> {
     let start = maze.start();
     x[start] = FORWARD;
@@ -276,13 +278,6 @@ fn meet_in_middle(maze: &Maze, mut x: Vec<State>, mut back: Vec<usize>) -> Optio
 
     // The waves touched between the last start-side level and settled goal-side cells.
     let last = levels.len() - 1;
-    let toward_goal = |x: &[State], j: usize, depth: usize| {
-        if depth == last {
-            goal_side(x[j])
-        } else {
-            x[j] == FORWARD | ON_ROUTE | ((depth + 1) % 3) as State
-        }
-    };
     // Neighbours one level nearer the start carry the previous depth tag, so only cells
     // next to the route are touched rather than every start-side cell.
     let mut route = candidates;
@@ -293,6 +288,12 @@ fn meet_in_middle(maze: &Maze, mut x: Vec<State>, mut back: Vec<usize>) -> Optio
             route.push(cell);
         }
     }
+    // Route cells nearest-the-goal first, while no level has had a tie.
+    let mut chain = (route.len() == 1).then(|| {
+        let mut chain = Vec::with_capacity(last + 1);
+        chain.push(route[0]);
+        chain
+    });
     let mut nearer = back;
     for depth in (1..=last).rev() {
         let tag = FORWARD | ((depth - 1) % 3) as State;
@@ -306,17 +307,38 @@ fn meet_in_middle(maze: &Maze, mut x: Vec<State>, mut back: Vec<usize>) -> Optio
             }
         }
         std::mem::swap(&mut route, &mut nearer);
+        if route.len() == 1 {
+            if let Some(chain) = &mut chain {
+                chain.push(route[0]);
+            }
+        } else {
+            chain = None;
+        }
     }
-    let mut cell = start;
-    let mut path = vec![cell];
-    for depth in 0..=last {
-        cell = *maze
-            .neighbours(cell)
-            .iter()
-            .find(|&&j| toward_goal(&x, j, depth))
-            .unwrap_or_else(|| panic!("route broke off after {path:?}"));
+    let mut path = if let Some(mut chain) = chain {
+        chain.reverse();
+        chain
+    } else {
+        let mut cell = start;
+        let mut path = Vec::with_capacity(last + 1);
         path.push(cell);
-    }
+        for depth in 1..=last {
+            let tag = FORWARD | ON_ROUTE | (depth % 3) as State;
+            cell = *maze
+                .neighbours(cell)
+                .iter()
+                .find(|&&j| x[j] == tag)
+                .unwrap_or_else(|| panic!("route broke off after {path:?}"));
+            path.push(cell);
+        }
+        path
+    };
+    let mut cell = *maze
+        .neighbours(path[last])
+        .iter()
+        .find(|&&j| goal_side(x[j]))
+        .unwrap_or_else(|| panic!("route broke off after {path:?}"));
+    path.push(cell);
     while cell != maze.goal() {
         cell = follow_pointer(maze, &x, cell, &path);
         path.push(cell);

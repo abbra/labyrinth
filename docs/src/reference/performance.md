@@ -83,7 +83,11 @@ at 256×256, moved between 0.8× and 1.1× at 512×512, and ranged 1.18–1.36×
 meeting cells, instead of rescanning every start-side cell, then moved the
 ratios over three interleaved runs to 1.71–1.73× at 64×64, 1.53–1.57× at
 128×128, 1.19–1.20× at 256×256, 1.01–1.04× at 512×512 and 1.16–1.26× at
-1024×1024; the table above predates that change.
+1024×1024. Reading the route straight off that backward sweep whenever each
+level holds a single route cell, so only a tie needs the forward walk, then
+gave 1.41–1.47× at 64×64, 1.32–1.36× at 128×128, 1.03–1.04× at 256×256,
+0.90–0.91× at 512×512 and 0.91–1.07× at 1024×1024 over three interleaved
+runs. The table above predates both changes.
 
 ## Server: 321×321 boards
 
