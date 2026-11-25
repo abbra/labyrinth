@@ -74,21 +74,14 @@ impl Model {
         if let Some((side, preference)) = maze.open_square() {
             return Some(open_square_path(maze, side, preference));
         }
-        let start = maze.start();
         let mut x = embed(maze);
         let mut frontier = Vec::with_capacity(maze.goals().len());
         for &goal in maze.goals() {
             x[goal] = self.block(goal, &x, maze);
             frontier.push(goal);
         }
-        if maze.goals().len() == 1 {
-            return meet_in_middle(maze, x, frontier);
-        }
-        let mut candidates = Vec::new();
-        while x[start] == 0 && !frontier.is_empty() {
-            grow_goal_wave(maze, &mut x, &mut frontier, &mut candidates);
-        }
-        read_path(maze, &x)
+        let path = meet_in_middle(maze, x, frontier)?;
+        visit_remaining_goals(maze, path)
     }
 
     /// Returns the route produced by [`Model::solve`] and details of how the
@@ -239,11 +232,12 @@ fn grow_goal_wave(
     false
 }
 
-/// Single-goal search growing whole waves from both ends, smaller frontier first.
+/// Search growing whole waves from the start and from every goal, smaller frontier
+/// first; returns the route to the first goal it reaches.
 ///
 /// Goal-side pointers match the plain goal flood on every route cell. For start-side
 /// cells the route takes the lowest slot whose neighbour is one step closer to the
-/// goal, which is the neighbour one step further from the start that still lies on a
+/// goals, which is the neighbour one step further from the start that still lies on a
 /// shortest route. When one cell meets the goal side and no cell back to the start was
 /// reached twice, that route follows the recorded parents; otherwise route cells are
 /// marked level by level, walking back from the meeting cells, and walked forward.
@@ -355,7 +349,9 @@ fn meet_in_middle(maze: &Maze, mut x: Vec<State>, mut back: Vec<usize>) -> Optio
         .find(|&&j| goal_side(x[j]))
         .unwrap_or_else(|| panic!("route broke off after {path:?}"));
     path.push(cell);
-    while cell != maze.goal() {
+    // One goal: a register compare; a per-step cell load costs ~4% at 64–128.
+    let (goal, single) = (maze.goals()[0], maze.goals().len() == 1);
+    while cell != goal && (single || maze.cells()[cell] != Cell::Goal) {
         cell = follow_pointer(maze, &x, cell, &path);
         path.push(cell);
     }
@@ -417,33 +413,33 @@ fn read_path(maze: &Maze, x: &[State]) -> Option<Vec<usize>> {
     if x[cell] == 0 {
         return None;
     }
-    if maze.goals().len() == 1 {
-        let mut path = vec![cell];
-        while cell != maze.goal() {
-            cell = follow_pointer(maze, x, cell, &path);
-            path.push(cell);
-        }
+    let mut path = vec![cell];
+    while maze.cells()[cell] != Cell::Goal {
+        cell = follow_pointer(maze, x, cell, &path);
+        path.push(cell);
+    }
+    visit_remaining_goals(maze, path)
+}
+
+/// Extends `path`, which ends at the first goal reached, by shortest legs to the
+/// nearest unvisited goal until every goal is visited; `None` if one is unreachable.
+fn visit_remaining_goals(maze: &Maze, mut path: Vec<usize>) -> Option<Vec<usize>> {
+    let mut remaining = maze.goals().len() - 1;
+    if remaining == 0 {
         return Some(path);
     }
-
     let n = maze.cells().len();
     let mut unvisited = vec![false; n];
     for &goal in maze.goals() {
         unvisited[goal] = true;
     }
-    let mut remaining = maze.goals().len();
+    // The route so far reaches no goal before its last cell.
+    unvisited[*path.last().unwrap()] = false;
     let mut previous = vec![usize::MAX; n];
     let mut queue = VecDeque::with_capacity(n);
     let mut segment = Vec::with_capacity(n);
-    let mut path = vec![cell];
-    while !unvisited[cell] {
-        cell = follow_pointer(maze, x, cell, &path);
-        path.push(cell);
-    }
-    unvisited[cell] = false;
-    remaining -= 1;
     while remaining > 0 {
-        cell = *path.last().unwrap();
+        let cell = *path.last().unwrap();
         previous.fill(usize::MAX);
         previous[cell] = cell;
         queue.clear();

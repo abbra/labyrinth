@@ -191,6 +191,43 @@ fn matches_bfs_on_hex_triangle_and_irregular_mazes() {
 }
 
 #[test]
+fn solve_matches_trace_on_random_mazes_with_several_goals() {
+    let model = Model::new();
+    let mut solved = 0;
+    for seed in 0..300 {
+        let (h, w) = (2 + seed as usize % 7, 2 + seed as usize / 7 % 9);
+        let mut rng = Rng::new(seed);
+        let square = (0..h * w)
+            .flat_map(|i| {
+                let right = (i % w + 1 < w).then_some((i, i + 1));
+                let down = (i + w < h * w).then_some((i, i + w));
+                right.into_iter().chain(down)
+            })
+            .collect();
+        let edges = [
+            square,
+            hex_edges(h, w),
+            triangle_edges(h, w),
+            irregular_edges(&mut rng, h * w),
+        ];
+        for (k, edges) in edges.into_iter().enumerate() {
+            let mut cells = random_cells(&mut rng, h * w);
+            for _ in 0..1 + rng.below(3) {
+                let i = rng.below(h * w);
+                if cells[i] != Cell::Start {
+                    cells[i] = Cell::Goal;
+                }
+            }
+            let maze = Maze::new(cells, edges).expect("valid graph");
+            let path = model.solve(&maze);
+            assert_eq!(path, model.trace(&maze).path, "shape {k} seed {seed}");
+            solved += usize::from(path.is_some() && maze.goals().len() > 1);
+        }
+    }
+    assert!(solved > 100, "too few solvable samples: {solved}");
+}
+
+#[test]
 fn walls_stay_walls_at_max_degree() {
     // A wall whose every neighbour is reached must not be flooded.
     let mut cells = vec![Cell::Open; MAX_DEGREE + 1];

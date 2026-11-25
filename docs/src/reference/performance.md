@@ -114,6 +114,33 @@ reservation; inlining alone gave about 2–3%. The reservation costs 12 bytes pe
 cell. The table above includes all five changes; its ratios are 1.04×, 1.01×,
 0.83×, 0.72× and 0.86×.
 
+### Several goals
+
+`bfs_compare` also times each backtracker maze with three extra goals, in the
+rooms next to the other two corners and in the centre room. The baseline,
+nearest-goal BFS, runs one queue BFS leg from the current cell to the nearest
+unvisited goal until every goal is visited, which is the route `Model::solve`
+returns. Both routes are checked for endpoints, edges, length and goal
+coverage outside the timed region. Bidirectional BFS and A* need a single
+target, so they are not run. Same settings and seeds as the table above; each
+time is the median of three interleaved runs pinned to one core.
+
+| Workload | Cells | `Model::solve` (µs) | Nearest-goal BFS (µs) | Ratio |
+|----------|------:|-------------------:|----------------------:|------:|
+| Backtracker 64×64, 4 goals | 4,096 | 19.1 | 23.1 | 0.83 |
+| Backtracker 128×128, 4 goals | 16,384 | 81.8 | 103.8 | 0.79 |
+| Backtracker 256×256, 4 goals | 65,536 | 908.9 | 1,027.7 | 0.88 |
+| Backtracker 512×512, 4 goals | 262,144 | 5,696.3 | 6,231.7 | 0.91 |
+| Backtracker 1024×1024, 4 goals | 1,048,576 | 36,244.6 | 42,360.3 | 0.86 |
+
+With several goals `solve` grows waves from the start and from all goals at
+once, as in the single-goal search, and stops at the first contact. It reads
+the route to the goal that was reached and then runs nearest-goal BFS legs for
+the remaining goals, like the baseline. Before this change `solve` flooded
+from the goals until the flood reached the start. That flood covered every
+open cell in 9 of the 10 mazes, and `solve` was 1.2–2.4× slower than the
+baseline.
+
 ## Server: 321×321 boards
 
 Each board was generated once with the backtracker and seed 1, then solved

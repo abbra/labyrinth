@@ -8,15 +8,15 @@ outward from all goals, updates only dirty cells, then builds a route from the
 start through every goal.
 
 `Model::solve` returns the same route without producing trace data. It has
-three strategies:
+two strategies:
 
 - **Open square.** A single-goal, fully open square grid gets a
   Manhattan-shortest route built directly, using cached neighbour-order
   preferences to resolve ties.
-- **One goal.** Waves grow from both ends until they meet; see
-  [Single-goal search](#single-goal-search).
-- **Several goals.** The goal flood that `trace` runs, using staged BFS
-  frontiers. The route is then read from the pointers.
+- **Waves.** Otherwise, waves grow from the start and from every goal until
+  they meet; see [Single-goal search](#single-goal-search). The route runs to
+  the goal that was reached. With several goals, `solve` then runs one queue
+  BFS leg to the nearest unvisited goal at a time, as `trace` does.
 
 From [Equivalent transformer](#equivalent-transformer) on, this page describes
 the equivalent generated-transformer representation. `Model::new` does not

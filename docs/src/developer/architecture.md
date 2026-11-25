@@ -24,10 +24,10 @@ lists use compressed sparse row (CSR) storage: one `offsets` array and one
 
 ### Solve and trace
 
-`Model::solve` floods from the goals with staged BFS frontiers when there are
-several goals. With one goal, `meet_in_middle` grows waves from the start and
-the goal and rebuilds the route `trace` would choose (see
-[How the Model Works](../reference/model.md#single-goal-search)). For a
+`meet_in_middle` grows waves from the start and from every goal and rebuilds
+the route to the first goal reached that `trace` would choose (see
+[How the Model Works](../reference/model.md#single-goal-search)). With several
+goals, `visit_remaining_goals` adds BFS legs to the remaining goals. For a
 single-goal, fully open square grid, `Maze` caches directional tie-break
 preferences and `solve` constructs a Manhattan-shortest path directly. No
 `solve` strategy runs the trace loop.

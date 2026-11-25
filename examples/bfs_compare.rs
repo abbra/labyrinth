@@ -37,11 +37,23 @@ fn main() {
         };
         // Per-solver medians of each seed's median, so one lucky maze cannot dominate.
         let mut per_seed: [Vec<f64>; 4] = std::array::from_fn(|_| Vec::new());
+        let mut per_seed_goals: [Vec<f64>; 2] = std::array::from_fn(|_| Vec::new());
         for seed in SEEDS {
-            let cells = generate::generate(&board, generate::Algorithm::Backtracker, seed);
+            let mut cells = generate::generate(&board, generate::Algorithm::Backtracker, seed);
             for (all, us) in per_seed
                 .iter_mut()
                 .zip(benchmark(&square_maze(side, &cells), side))
+            {
+                all.push(us);
+            }
+            // Same maze plus goals in the rooms near the other two corners and the centre.
+            let (far, mid) = ((side - 3) | 1, (side / 2) | 1);
+            for (row, col) in [(1, far), (far, 1), (mid, mid)] {
+                cells[row * side + col] = b'G';
+            }
+            for (all, us) in per_seed_goals
+                .iter_mut()
+                .zip(benchmark_goals(&square_maze(side, &cells)))
             {
                 all.push(us);
             }
@@ -50,12 +62,22 @@ fn main() {
             &format!("square_backtracker_{side}x{side}"),
             side * side,
             SEEDS.len(),
-            per_seed.map(|mut all| {
-                all.sort_unstable_by(f64::total_cmp);
-                all[all.len() / 2]
-            }),
+            per_seed.map(median),
         );
+        let [model, bfs] = per_seed_goals.map(median);
+        println!(
+            "workload=square_backtracker_{side}x{side}_4_goals cells={} seeds={} runs={RUNS}",
+            side * side,
+            SEEDS.len()
+        );
+        println!("model_solve_us={model:.1}");
+        println!("nearest_goal_bfs_us={bfs:.1}");
     }
+}
+
+fn median(mut all: Vec<f64>) -> f64 {
+    all.sort_unstable_by(f64::total_cmp);
+    all[all.len() / 2]
 }
 
 fn report(name: &str, cells: usize, seeds: usize, [model, bfs, bidirectional, a_star]: [f64; 4]) {
@@ -87,6 +109,28 @@ fn benchmark(maze: &Maze, width: usize) -> [f64; 4] {
                 _ => unreachable!(),
             };
             check_path(maze, &path, start, goal, shortest_length);
+            times[solver].push(elapsed);
+        }
+    }
+    times.map(|mut times| median_us(&mut times))
+}
+
+/// Median µs for the model and repeated queue BFS on a multi-goal maze.
+fn benchmark_goals(maze: &Maze) -> [f64; 2] {
+    let expected = nearest_goal_bfs(maze).expect("benchmark maze is solvable");
+    let (start, end, length) = (maze.start(), *expected.last().unwrap(), expected.len());
+    let model = Model::new();
+    let mut times: [Vec<Duration>; 2] = std::array::from_fn(|_| Vec::with_capacity(RUNS));
+    for run in 0..RUNS {
+        for offset in 0..2 {
+            let solver = (run + offset) % 2;
+            let (elapsed, path) = match solver {
+                0 => time_model(&model, maze),
+                _ => timing::time_batch(|| nearest_goal_bfs(black_box(maze))),
+            };
+            // Equal length and end assume no tie between nearest goals on these mazes.
+            check_path(maze, &path, start, end, length);
+            assert!(maze.goals().iter().all(|goal| path.contains(goal)));
             times[solver].push(elapsed);
         }
     }
@@ -129,6 +173,53 @@ fn queue_bfs(maze: &Maze) -> Option<Vec<usize>> {
         }
     }
     path_from_previous(start, goal, &previous)
+}
+
+/// Queue BFS legs, each to the nearest unvisited goal: the multi-goal route `solve` returns.
+fn nearest_goal_bfs(maze: &Maze) -> Option<Vec<usize>> {
+    let n = maze.cells().len();
+    let mut unvisited = vec![false; n];
+    for &goal in maze.goals() {
+        unvisited[goal] = true;
+    }
+    let mut remaining = maze.goals().len();
+    let mut previous = vec![usize::MAX; n];
+    let mut queue = VecDeque::new();
+    let mut leg = Vec::new();
+    let mut path = vec![maze.start()];
+    while remaining > 0 {
+        let from = *path.last().unwrap();
+        previous.fill(usize::MAX);
+        previous[from] = from;
+        queue.clear();
+        queue.push_back(from);
+        let mut target = None;
+        while let Some(cell) = queue.pop_front() {
+            if unvisited[cell] {
+                target = Some(cell);
+                break;
+            }
+            for &neighbour in maze.neighbours(cell) {
+                if maze.cells()[neighbour] != Cell::Wall && previous[neighbour] == usize::MAX {
+                    previous[neighbour] = cell;
+                    queue.push_back(neighbour);
+                }
+            }
+        }
+        let mut cell = target?;
+        leg.clear();
+        while cell != from {
+            leg.push(cell);
+            cell = previous[cell];
+        }
+        for &cell in leg.iter().rev() {
+            if std::mem::take(&mut unvisited[cell]) {
+                remaining -= 1;
+            }
+            path.push(cell);
+        }
+    }
+    Some(path)
 }
 
 fn bidirectional_bfs(maze: &Maze) -> Option<Vec<usize>> {
