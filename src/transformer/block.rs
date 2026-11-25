@@ -43,6 +43,25 @@ impl Block {
         Self { probabilities }
     }
 
+    #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+    fn attend(&self, input: &[Token], neighbours: &[usize]) -> HeadRow {
+        use std::arch::x86_64::*;
+
+        // SAFETY: AVX2 is enabled for this build; each unaligned load/store spans one HeadRow.
+        const _: () = assert!(MAX_DEGREE == 8);
+        unsafe {
+            let mut sum = _mm256_setzero_ps();
+            for (&key, row) in neighbours.iter().zip(&self.probabilities[neighbours.len()]) {
+                let value = _mm256_set1_ps(input[key][REACHED]);
+                sum = _mm256_add_ps(sum, _mm256_mul_ps(value, _mm256_loadu_ps(row.as_ptr())));
+            }
+            let mut heads = [0.0; MAX_DEGREE];
+            _mm256_storeu_ps(heads.as_mut_ptr(), sum);
+            heads
+        }
+    }
+
+    #[cfg(not(all(target_arch = "x86_64", target_feature = "avx2")))]
     fn attend(&self, input: &[Token], neighbours: &[usize]) -> HeadRow {
         let mut heads = [0.0; MAX_DEGREE];
         for (&key, weights) in neighbours.iter().zip(&self.probabilities[neighbours.len()]) {
