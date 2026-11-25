@@ -5,6 +5,9 @@ use std::array;
 use std::collections::HashMap;
 
 const LANES: usize = 8;
+type WeightRow = [__m256; MAX_DEGREE];
+const SHARED_ROWS: usize = (8 << 20) / size_of::<WeightRow>();
+const LOCAL_ROWS: usize = (64 << 10) / size_of::<WeightRow>();
 
 /// # Safety
 /// Requires AVX2. The caller limits cell count to the signed gather index range.
@@ -26,8 +29,9 @@ pub(super) fn solve(block: &Block, maze: &Maze) -> Option<Vec<usize>> {
         )
     };
     let mut keys = Vec::new();
-    let mut weights = Vec::new();
+    let mut weights: Vec<WeightRow> = Vec::new();
     let mut patterns = HashMap::new();
+    let mut window_end = SHARED_ROWS;
     let mut batch_layout = Vec::with_capacity(batches);
     let mut open = Vec::with_capacity(batches);
     let mut goal = vec![[0.0; LANES]; batches];
@@ -48,6 +52,12 @@ pub(super) fn solve(block: &Block, maze: &Maze) -> Option<Vec<usize>> {
         // Batches with the same lane degrees have identical attention weights.
         let degrees = neighbours.map(|row| row.len() as u8);
         let count = usize::from(*degrees.iter().max().unwrap());
+        // Small tables stay shared. Beyond that, keep nearby repeats but stream
+        // distant ones in batch order instead of gathering cold weight rows.
+        if weights.len() > window_end {
+            patterns.clear();
+            window_end = weights.len() + LOCAL_ROWS;
+        }
         let offset = *patterns.entry(degrees).or_insert_with(|| {
             let offset = weights.len();
             weights.extend((0..count).map(|k| {

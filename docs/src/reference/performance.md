@@ -90,6 +90,19 @@ The seed-1 backtracker fell from 25.98 to 13.65 seconds and its four-goal
 variant from 98.43 to 48.01 seconds (one sample each). Irregular graphs with
 few repeated degree patterns need not see the same savings.
 
+On irregular graphs the order of those patterns matters. Once packed weights
+exceed 8 MiB, the packer starts a fresh lookup window and resets it after each
+additional 64 KiB of newly packed weights. Existing offsets remain valid.
+Nearby repeats can still share; distant repeats get another copy in traversal
+order. These are weight-data budgets, not bounds on total allocation.
+
+On a 262,144-cell graph with degrees 1–8 in every batch, scattering 16,384
+patterns (two uses each) took 179 ms with per-batch weights, 271 ms with global
+sharing, and 172 ms with windowed sharing. Placing identical patterns together
+instead took 182 / 109 / 119 ms respectively. On a 512×512 open square the
+same kernels took 1,626 / 814 / 818 ms. Times are five-solve medians on one
+pinned Ryzen AI 9 HX 370 core, including packing; all routes matched queue BFS.
+
 The transformer evaluates attention and the MLP on every cell for each distance
 layer of each leg, including walls. Queue BFS processes only its frontier.
 `Model::solve` bypasses search entirely on these open squares; its sub-microsecond
