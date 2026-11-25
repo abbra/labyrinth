@@ -30,6 +30,23 @@ impl Default for Transformer {
 
 impl Solver for Transformer {
     fn solve(&self, maze: &Maze) -> Option<Vec<usize>> {
+        #[cfg(target_arch = "x86_64")]
+        if std::is_x86_feature_detected!("avx2") {
+            return self.solve_with(maze, |block, input, neighbours, i| {
+                // SAFETY: AVX2 was detected before entering the solve loop.
+                unsafe { block.forward_avx2(input, neighbours, i) }
+            });
+        }
+        self.solve_with(maze, Block::forward)
+    }
+}
+
+impl Transformer {
+    fn solve_with(
+        &self,
+        maze: &Maze,
+        forward: impl Fn(&Block, &[Token], &[usize], usize) -> Token,
+    ) -> Option<Vec<usize>> {
         let mut tokens: Vec<_> = maze
             .cells()
             .iter()
@@ -56,7 +73,7 @@ impl Solver for Transformer {
                 next.clear();
                 let mut changed = false;
                 for (i, old) in tokens.iter().enumerate() {
-                    let new = self.block.forward(&tokens, maze.neighbours(i), i);
+                    let new = forward(&self.block, &tokens, maze.neighbours(i), i);
                     changed = changed || new != *old;
                     next.push(new);
                 }

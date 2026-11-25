@@ -43,13 +43,17 @@ impl Block {
         Self { probabilities }
     }
 
-    #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
-    fn attend(&self, input: &[Token], neighbours: &[usize]) -> HeadRow {
+    /// # Safety
+    /// The caller must verify AVX2 support.
+    #[cfg(target_arch = "x86_64")]
+    #[target_feature(enable = "avx2")]
+    pub(super) fn forward_avx2(&self, input: &[Token], neighbours: &[usize], i: usize) -> Token {
         use std::arch::x86_64::*;
 
-        // SAFETY: AVX2 is enabled for this build; each unaligned load/store spans one HeadRow.
+        // Each lane corresponds to a single attention head.
         const _: () = assert!(MAX_DEGREE == 8);
-        unsafe {
+        // SAFETY: each unaligned load/store spans exactly one eight-float row.
+        let heads = unsafe {
             let mut sum = _mm256_setzero_ps();
             for (&key, row) in neighbours.iter().zip(&self.probabilities[neighbours.len()]) {
                 let value = _mm256_set1_ps(input[key][REACHED]);
@@ -58,10 +62,10 @@ impl Block {
             let mut heads = [0.0; MAX_DEGREE];
             _mm256_storeu_ps(heads.as_mut_ptr(), sum);
             heads
-        }
+        };
+        Self::update(input[i], heads)
     }
 
-    #[cfg(not(all(target_arch = "x86_64", target_feature = "avx2")))]
     fn attend(&self, input: &[Token], neighbours: &[usize]) -> HeadRow {
         let mut heads = [0.0; MAX_DEGREE];
         for (&key, weights) in neighbours.iter().zip(&self.probabilities[neighbours.len()]) {
@@ -74,10 +78,13 @@ impl Block {
     }
 
     pub(super) fn forward(&self, input: &[Token], neighbours: &[usize], i: usize) -> Token {
-        let mut output = input[i];
+        Self::update(input[i], self.attend(input, neighbours))
+    }
+
+    #[inline(always)]
+    fn update(mut output: Token, heads: HeadRow) -> Token {
         let [one, open, goal, reached, ..] = output;
         let ptr_base = 10.0 * (open - one - goal - reached);
-        let heads = self.attend(input, neighbours);
         let scratch: HeadRow = array::from_fn(|d| output[NBR_REACHED + d] + heads[d]);
         let scaled = scratch.map(|v| 10.0 * v);
         // Keep the ordered f32 prefix separate so LLVM can vectorize the eight ReLU pairs.
@@ -100,6 +107,29 @@ impl Block {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_arch = "x86_64")]
+    #[test]
+    fn avx2_matches_portable_for_every_degree() {
+        if !std::is_x86_feature_detected!("avx2") {
+            return;
+        }
+        let block = Block::new();
+        let mut input = [[0.0; WIDTH]; MAX_DEGREE + 1];
+        input[0][ONE] = 1.0;
+        input[0][OPEN] = 1.0;
+        let neighbours: [usize; MAX_DEGREE] = array::from_fn(|i| i + 1);
+        for active in neighbours {
+            input[active][REACHED] = 0.5;
+            for degree in 0..=MAX_DEGREE {
+                let keys = &neighbours[..degree];
+                // SAFETY: AVX2 support was checked above.
+                let actual = unsafe { block.forward_avx2(&input, keys, 0) };
+                assert_eq!(actual, block.forward(&input, keys, 0));
+            }
+            input[active][REACHED] = 0.0;
+        }
+    }
 
     #[test]
     fn fractional_values_follow_the_relu_ramp_and_clear_scratch() {

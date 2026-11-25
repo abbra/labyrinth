@@ -66,18 +66,13 @@ changing summation order or requiring target-specific intrinsics. In a pinned
 before/after run, the 32×32 open, backtracker, and four-goal backtracker cases
 fell from 1,186 / 2,788 / 4,678 µs to 903 / 2,186 / 3,571 µs respectively.
 
-On x86-64, an AVX2-targeted build accumulates all eight attention heads in
-one 256-bit register. To reproduce on an AVX2-capable machine:
+The default x86-64 binary checks for AVX2 once per `Transformer::solve` call,
+outside the cell loop. When available, it accumulates all eight attention heads
+in one 256-bit register. Other CPUs use the portable kernel. No `RUSTFLAGS` are
+needed; globally enabling AVX2 would make the binary unsuitable for older CPUs.
 
-```sh
-RUSTFLAGS='-C target-feature=+avx2' taskset -c 2 cargo run --release --example bfs_compare -- --transformer
-```
-
-On the same three 32×32 workloads the default build took 912 / 2,209 / 3,601 µs,
-versus 828 / 2,016 / 3,256 µs with explicit eight-lane attention. Enabling AVX2
-without changing the kernel still produced four-lane attention and took
-969 / 2,333 / 3,822 µs. Default builds remain portable; the targeted binary
-requires AVX2 and does not probe for it at runtime.
+With runtime dispatch on the AVX2 host, the three 32×32 workloads above took
+846 / 2,096 / 3,294 µs using the same pinned benchmark command.
 
 The transformer evaluates attention and the MLP on every cell for each distance
 layer of each leg, including walls. Queue BFS processes only its frontier.
