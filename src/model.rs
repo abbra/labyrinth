@@ -238,7 +238,7 @@ fn grow_goal_wave(
 /// Goal-side pointers match the plain goal flood on every route cell. For start-side
 /// cells the route takes the lowest slot whose neighbour is one step closer to the
 /// goal, which is the neighbour one step further from the start that still lies on a
-/// shortest route; those are marked by sweeping the start-side levels backwards.
+/// shortest route; those are marked level by level, walking back from the meeting cells.
 fn meet_in_middle(maze: &Maze, mut x: Vec<State>, mut back: Vec<usize>) -> Option<Vec<usize>> {
     let start = maze.start();
     x[start] = FORWARD;
@@ -283,17 +283,29 @@ fn meet_in_middle(maze: &Maze, mut x: Vec<State>, mut back: Vec<usize>) -> Optio
             x[j] == FORWARD | ON_ROUTE | ((depth + 1) % 3) as State
         }
     };
-    for depth in (0..=last).rev() {
-        let end = levels.get(depth + 1).copied().unwrap_or(order.len());
-        for &cell in &order[levels[depth]..end] {
-            if maze
-                .neighbours(cell)
-                .iter()
-                .any(|&j| toward_goal(&x, j, depth))
-            {
-                x[cell] |= ON_ROUTE;
+    // Neighbours one level nearer the start carry the previous depth tag, so only cells
+    // next to the route are touched rather than every start-side cell.
+    let mut route = candidates;
+    route.clear();
+    for &cell in &order[levels[last]..] {
+        if maze.neighbours(cell).iter().any(|&j| goal_side(x[j])) {
+            x[cell] |= ON_ROUTE;
+            route.push(cell);
+        }
+    }
+    let mut nearer = back;
+    for depth in (1..=last).rev() {
+        let tag = FORWARD | ((depth - 1) % 3) as State;
+        nearer.clear();
+        for &cell in &route {
+            for &j in maze.neighbours(cell) {
+                if x[j] == tag {
+                    x[j] |= ON_ROUTE;
+                    nearer.push(j);
+                }
             }
         }
+        std::mem::swap(&mut route, &mut nearer);
     }
     let mut cell = start;
     let mut path = vec![cell];

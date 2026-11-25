@@ -79,7 +79,11 @@ goal-only flood took 2,865.8 µs at 512×512 and 23,859.5 µs at 1024×1024. On
 backtracker mazes `solve` still trails queue BFS. Across seven sweeps the
 `solve`/queue BFS ratio stayed near 1.6× at 64×64, 1.5× at 128×128 and 1.3×
 at 256×256, moved between 0.8× and 1.1× at 512×512, and ranged 1.18–1.36×
-(median 1.30×) at 1024×1024.
+(median 1.30×) at 1024×1024. Marking the route by walking back from the
+meeting cells, instead of rescanning every start-side cell, then moved the
+ratios over three interleaved runs to 1.71–1.73× at 64×64, 1.53–1.57× at
+128×128, 1.19–1.20× at 256×256, 1.01–1.04× at 512×512 and 1.16–1.26× at
+1024×1024; the table above predates that change.
 
 ## Server: 321×321 boards
 
