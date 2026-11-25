@@ -1,10 +1,11 @@
 //! A fixed-rule breadth-first-search solver with route tracing.
 //!
 //! `Model::solve` uses staged BFS frontiers for general graphs and a cached
-//! direct path for a single-goal, fully open square grid. `Model::trace`
-//! applies boolean BFS rules directly to dirty cells, floods outward from all
-//! goals, and records how each cell was reached. Both return shortest-path
-//! legs joining every goal.
+//! direct path for a single-goal, fully open square grid. With one goal it also
+//! grows waves from the start, always widening the smaller frontier, and rebuilds
+//! the route `trace` would choose. `Model::trace` applies boolean BFS rules
+//! directly to dirty cells, floods outward from all goals, and records how each
+//! cell was reached. Both return shortest-path legs joining every goal.
 //!
 //! The equivalent graph transformer uses structural attention: each head selects one
 //! neighbour slot, with a sink for missing slots. Fixed weights therefore work for any
@@ -17,6 +18,11 @@ const MODEL_D: usize = 4 + 2 * K;
 type State = u8;
 // Stage one wave without letting its rule outputs affect other candidates.
 const PENDING: State = 1 << 7;
+// Start-side cells: this flag plus their depth from the start, modulo 3.
+const FORWARD: State = 1 << 6;
+// Start-side cells that lie on a shortest route to the goal.
+const ON_ROUTE: State = 1 << 5;
+const _: () = assert!(K + 1 < ON_ROUTE as usize);
 
 /// The fixed-rule maze-solving model.
 ///
@@ -71,26 +77,12 @@ impl Model {
             x[goal] = self.block(goal, &x, maze);
             frontier.push(goal);
         }
+        if maze.goals().len() == 1 {
+            return meet_in_middle(maze, x, frontier);
+        }
         let mut candidates = Vec::new();
         while x[start] == 0 && !frontier.is_empty() {
-            candidates.clear();
-            for &i in &frontier {
-                for &j in maze.neighbours(i) {
-                    if x[j] == 0 && maze.cells()[j] != Cell::Wall {
-                        let slot = maze
-                            .neighbours(j)
-                            .iter()
-                            .position(|&neighbour| x[neighbour] != 0 && x[neighbour] < PENDING)
-                            .expect("a candidate has a reached neighbour");
-                        x[j] = (slot + 1) as State | PENDING;
-                        candidates.push(j);
-                    }
-                }
-            }
-            for &j in &candidates {
-                x[j] &= !PENDING;
-            }
-            std::mem::swap(&mut frontier, &mut candidates);
+            grow_goal_wave(maze, &mut x, &mut frontier, &mut candidates);
         }
         read_path(maze, &x)
     }
@@ -203,6 +195,132 @@ fn open_square_path(maze: &Maze, side: usize, preferences: &[u8]) -> Vec<usize> 
     }
     path
 }
+
+/// Whether the goal flood has settled `state` (a pointer slot or the goal itself).
+fn goal_side(state: State) -> bool {
+    state != 0 && state < ON_ROUTE
+}
+
+/// Grows the goal flood by one wave; stops early and returns `true` on touching a
+/// start-side cell.
+fn grow_goal_wave(
+    maze: &Maze,
+    x: &mut [State],
+    frontier: &mut Vec<usize>,
+    candidates: &mut Vec<usize>,
+) -> bool {
+    candidates.clear();
+    for &i in frontier.iter() {
+        for &j in maze.neighbours(i) {
+            if x[j] & FORWARD != 0 {
+                return true;
+            }
+            if x[j] == 0 && maze.cells()[j] != Cell::Wall {
+                let slot = maze
+                    .neighbours(j)
+                    .iter()
+                    .position(|&neighbour| goal_side(x[neighbour]))
+                    .expect("a candidate has a reached neighbour");
+                x[j] = (slot + 1) as State | PENDING;
+                candidates.push(j);
+            }
+        }
+    }
+    for &j in candidates.iter() {
+        x[j] &= !PENDING;
+    }
+    std::mem::swap(frontier, candidates);
+    false
+}
+
+/// Single-goal search growing whole waves from both ends, smaller frontier first.
+///
+/// Goal-side pointers match the plain goal flood on every route cell. For start-side
+/// cells the route takes the lowest slot whose neighbour is one step closer to the
+/// goal, which is the neighbour one step further from the start that still lies on a
+/// shortest route; those are marked by sweeping the start-side levels backwards.
+fn meet_in_middle(maze: &Maze, mut x: Vec<State>, mut back: Vec<usize>) -> Option<Vec<usize>> {
+    let start = maze.start();
+    x[start] = FORWARD;
+    // Start-side cells in wave order; level `t` begins at `levels[t]`.
+    let mut order = vec![start];
+    let mut levels = vec![0];
+    let mut candidates = Vec::new();
+    'search: loop {
+        let depth = levels.len() - 1;
+        let (level_start, level_end) = (levels[depth], order.len());
+        if level_start == level_end || back.is_empty() {
+            return None;
+        }
+        if back.len() < level_end - level_start {
+            if grow_goal_wave(maze, &mut x, &mut back, &mut candidates) {
+                break;
+            }
+            continue;
+        }
+        let tag = FORWARD | ((depth + 1) % 3) as State;
+        for i in level_start..level_end {
+            for &j in maze.neighbours(order[i]) {
+                if goal_side(x[j]) {
+                    order.truncate(level_end);
+                    break 'search;
+                }
+                if x[j] == 0 && maze.cells()[j] != Cell::Wall {
+                    x[j] = tag;
+                    order.push(j);
+                }
+            }
+        }
+        levels.push(level_end);
+    }
+
+    // The waves touched between the last start-side level and settled goal-side cells.
+    let last = levels.len() - 1;
+    let toward_goal = |x: &[State], j: usize, depth: usize| {
+        if depth == last {
+            goal_side(x[j])
+        } else {
+            x[j] == FORWARD | ON_ROUTE | ((depth + 1) % 3) as State
+        }
+    };
+    for depth in (0..=last).rev() {
+        let end = levels.get(depth + 1).copied().unwrap_or(order.len());
+        for &cell in &order[levels[depth]..end] {
+            if maze
+                .neighbours(cell)
+                .iter()
+                .any(|&j| toward_goal(&x, j, depth))
+            {
+                x[cell] |= ON_ROUTE;
+            }
+        }
+    }
+    let mut cell = start;
+    let mut path = vec![cell];
+    for depth in 0..=last {
+        cell = *maze
+            .neighbours(cell)
+            .iter()
+            .find(|&&j| toward_goal(&x, j, depth))
+            .unwrap_or_else(|| panic!("route broke off after {path:?}"));
+        path.push(cell);
+    }
+    while cell != maze.goal() {
+        cell = follow_pointer(maze, &x, cell, &path);
+        path.push(cell);
+    }
+    Some(path)
+}
+
+/// The neighbour a goal-side pointer at `cell` leads to.
+fn follow_pointer(maze: &Maze, x: &[State], cell: usize, path: &[usize]) -> usize {
+    let slot = x[cell]
+        .checked_sub(1)
+        .map(usize::from)
+        .filter(|&slot| slot < K)
+        .unwrap_or_else(|| panic!("pointer chain broke off after {path:?}"));
+    maze.neighbours(cell)[slot]
+}
 /// What [`Model::trace`] observed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
@@ -227,12 +345,7 @@ fn read_path(maze: &Maze, x: &[State]) -> Option<Vec<usize>> {
     if maze.goals().len() == 1 {
         let mut path = vec![cell];
         while cell != maze.goal() {
-            let slot = x[cell]
-                .checked_sub(1)
-                .map(usize::from)
-                .filter(|&slot| slot < K)
-                .unwrap_or_else(|| panic!("pointer chain broke off after {path:?}"));
-            cell = maze.neighbours(cell)[slot];
+            cell = follow_pointer(maze, x, cell, &path);
             path.push(cell);
         }
         return Some(path);
@@ -249,12 +362,7 @@ fn read_path(maze: &Maze, x: &[State]) -> Option<Vec<usize>> {
     let mut segment = Vec::with_capacity(n);
     let mut path = vec![cell];
     while !unvisited[cell] {
-        let slot = x[cell]
-            .checked_sub(1)
-            .map(usize::from)
-            .filter(|&slot| slot < K)
-            .unwrap_or_else(|| panic!("pointer chain broke off after {path:?}"));
-        cell = maze.neighbours(cell)[slot];
+        cell = follow_pointer(maze, x, cell, &path);
         path.push(cell);
     }
     unvisited[cell] = false;

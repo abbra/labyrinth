@@ -14,16 +14,17 @@ use std::time::Duration;
 use labyrinth::{Cell, Maze, Model};
 
 const SWEEP_SIDES: [usize; 5] = [64, 128, 256, 512, 1024];
-const SEED: u64 = 1;
+const SEEDS: [u64; 5] = [1, 2, 3, 4, 5];
 const RUNS: usize = 9;
 
 fn main() {
     for side in SWEEP_SIDES {
         let open = open_square(side);
-        benchmark(
+        report(
             &format!("open_square_{side}x{side}_single_goal"),
-            &open,
-            side,
+            open.cells().len(),
+            1,
+            benchmark(&open, side),
         );
 
         // Square generation only reads these fields; skip expensive polygon geometry.
@@ -34,17 +35,39 @@ fn main() {
             polygons: Vec::new(),
             neighbours: Vec::new(),
         };
-        let cells = generate::generate(&board, generate::Algorithm::Backtracker, SEED);
-        let maze = square_maze(side, &cells);
-        benchmark(
-            &format!("square_backtracker_{side}x{side}_seed_{SEED}"),
-            &maze,
-            side,
+        // Per-solver medians of each seed's median, so one lucky maze cannot dominate.
+        let mut per_seed: [Vec<f64>; 4] = std::array::from_fn(|_| Vec::new());
+        for seed in SEEDS {
+            let cells = generate::generate(&board, generate::Algorithm::Backtracker, seed);
+            for (all, us) in per_seed
+                .iter_mut()
+                .zip(benchmark(&square_maze(side, &cells), side))
+            {
+                all.push(us);
+            }
+        }
+        report(
+            &format!("square_backtracker_{side}x{side}"),
+            side * side,
+            SEEDS.len(),
+            per_seed.map(|mut all| {
+                all.sort_unstable_by(f64::total_cmp);
+                all[all.len() / 2]
+            }),
         );
     }
 }
 
-fn benchmark(name: &str, maze: &Maze, width: usize) {
+fn report(name: &str, cells: usize, seeds: usize, [model, bfs, bidirectional, a_star]: [f64; 4]) {
+    println!("workload={name} cells={cells} seeds={seeds} runs={RUNS}");
+    println!("model_solve_us={model:.1}");
+    println!("queue_bfs_us={bfs:.1}");
+    println!("bidirectional_bfs_us={bidirectional:.1}");
+    println!("a_star_us={a_star:.1}");
+}
+
+/// Median µs per solver: model, queue BFS, bidirectional BFS, A*.
+fn benchmark(maze: &Maze, width: usize) -> [f64; 4] {
     let start = maze.start();
     let goal = maze.goal();
     let shortest = queue_bfs(maze).expect("benchmark maze is solvable");
@@ -67,22 +90,7 @@ fn benchmark(name: &str, maze: &Maze, width: usize) {
             times[solver].push(elapsed);
         }
     }
-
-    let [
-        mut model_times,
-        mut bfs_times,
-        mut bidirectional_times,
-        mut a_star_times,
-    ] = times;
-    let model_us = median_us(&mut model_times);
-    let bfs_us = median_us(&mut bfs_times);
-    let bidirectional_us = median_us(&mut bidirectional_times);
-    let a_star_us = median_us(&mut a_star_times);
-    println!("workload={name} cells={} runs={RUNS}", maze.cells().len());
-    println!("model_solve_us={model_us:.1}");
-    println!("queue_bfs_us={bfs_us:.1}");
-    println!("bidirectional_bfs_us={bidirectional_us:.1}");
-    println!("a_star_us={a_star_us:.1}");
+    times.map(|mut times| median_us(&mut times))
 }
 
 fn time_model(model: &Model, maze: &Maze) -> (Duration, Vec<usize>) {

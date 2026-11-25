@@ -21,9 +21,12 @@ fn bfs_len(maze: &Maze) -> Option<usize> {
     None
 }
 
-/// Solves `maze` with the model and checks the path against BFS; returns whether solvable.
+/// Solves `maze` with the model and checks the path against BFS and `trace`'s
+/// tie-breaks; returns whether solvable.
 fn check(maze: &Maze, what: &str) -> bool {
-    let path = Model::new().solve(maze);
+    let model = Model::new();
+    let path = model.solve(maze);
+    assert_eq!(path, model.trace(maze).path, "{what}: solve vs trace");
     assert_eq!(
         path.as_ref().map(Vec::len),
         bfs_len(maze),

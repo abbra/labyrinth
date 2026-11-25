@@ -47,30 +47,35 @@ It validates each route outside the timed batch.
 `cargo run --release --example bfs_compare` compares `Model::solve` with
 queue-based BFS, bidirectional BFS, and A* on both open-square and deterministic
 square backtracker mazes at every open-square sweep size: 64, 128, 256, 512,
-and 1024. Backtracker mazes use seed 1. Maze generation and construction are
-outside the timed region. A* uses Manhattan distance for the square-grid
-heuristic.
+and 1024. Backtracker rows are the median over seeds 1–5 of each seed's
+median. Maze generation and construction are outside the timed region. A*
+uses Manhattan distance for the square-grid heuristic.
 
 | Workload | Cells | `Model::solve` (µs) | Queue BFS (µs) | Bidirectional BFS (µs) | A* (µs) |
 |----------|------:|-------------------:|---------------:|-----------------------:|--------:|
-| Open square 64×64 | 4,096 | 0.1 | 24.1 | 28.8 | 100.6 |
-| Backtracker 64×64 | 4,096 | 9.9 | 6.3 | 7.5 | 12.4 |
-| Open square 128×128 | 16,384 | 0.2 | 79.1 | 98.3 | 422.3 |
-| Backtracker 128×128 | 16,384 | 40.1 | 45.9 | 39.4 | 112.2 |
-| Open square 256×256 | 65,536 | 0.3 | 383.2 | 415.0 | 2,000.1 |
-| Backtracker 256×256 | 65,536 | 506.6 | 335.7 | 305.7 | 442.2 |
-| Open square 512×512 | 262,144 | 0.7 | 2,993.1 | 4,079.3 | 9,142.6 |
-| Backtracker 512×512 | 262,144 | 2,902.7 | 645.4 | 988.5 | 833.8 |
-| Open square 1024×1024 | 1,048,576 | 1.3 | 24,127.7 | 20,684.4 | 40,840.7 |
-| Backtracker 1024×1024 | 1,048,576 | 22,398.0 | 16,967.1 | 16,570.2 | 24,418.6 |
+| Open square 64×64 | 4,096 | 0.1 | 18.5 | 23.0 | 78.8 |
+| Backtracker 64×64 | 4,096 | 11.5 | 7.2 | 8.9 | 13.9 |
+| Open square 128×128 | 16,384 | 0.2 | 88.6 | 111.0 | 479.5 |
+| Backtracker 128×128 | 16,384 | 45.8 | 31.0 | 42.7 | 59.9 |
+| Open square 256×256 | 65,536 | 0.3 | 437.5 | 445.9 | 2,113.4 |
+| Backtracker 256×256 | 65,536 | 405.6 | 309.9 | 350.1 | 361.5 |
+| Open square 512×512 | 262,144 | 0.6 | 3,387.5 | 4,733.1 | 10,116.8 |
+| Backtracker 512×512 | 262,144 | 1,293.9 | 1,256.0 | 1,800.9 | 1,814.8 |
+| Open square 1024×1024 | 1,048,576 | 1.1 | 25,989.0 | 23,569.6 | 44,217.0 |
+| Backtracker 1024×1024 | 1,048,576 | 12,214.9 | 10,323.4 | 12,955.6 | 13,585.9 |
 
 The comparison sweep was rerun on 2026-11-25. Each sample uses one calibration
 solve to choose a repeated batch targeting 10 ms (capped at 1,000,000 solves);
-reported timings are per-call batch averages. Values are medians of nine
-samples with solver order rotated, printed to 0.1 µs. `0.0` means below
+reported timings are per-call batch averages. Per maze, values are medians of
+nine samples with solver order rotated, printed to 0.1 µs. `0.0` means below
 0.05 µs. Every route's endpoints, traversable cells, edges, and shortest
 length are checked outside the timed region. Sub-microsecond timings remain
 sensitive to system noise; interpret them as approximate.
+
+With a single goal, `Model::solve` grows waves from both the goal and the
+start, widening whichever frontier is smaller, and then rebuilds the route
+`Model::trace` would choose. On the same five-seed sweep the goal-only flood
+took 2,865.8 µs at 512×512 and 23,859.5 µs at 1024×1024.
 
 ## Server: 321×321 boards
 
