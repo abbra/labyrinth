@@ -56,3 +56,16 @@ fn max_degree_wall_blocks_even_several_reached_neighbours() {
     let maze = Maze::new(cells, (1..=MAX_DEGREE).map(|i| (0, i))).unwrap();
     check(&maze, None);
 }
+
+#[test]
+fn goal_reset_and_pointer_readout_cross_partial_batches() {
+    for tail in 1..=8 {
+        let end = 16 + tail - 1;
+        let mut cells = vec![Cell::Open; end + 1];
+        cells[0] = Cell::Start;
+        cells[8] = Cell::Goal;
+        cells[end] = Cell::Goal;
+        let maze = Maze::new(cells, (0..end).map(|i| (i, i + 1))).unwrap();
+        check(&maze, Some(&(0..=end).collect::<Vec<_>>()));
+    }
+}

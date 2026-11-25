@@ -15,7 +15,7 @@ type HeadRow = [f32; MAX_DEGREE];
 
 #[derive(Clone, Debug)]
 pub(super) struct Block {
-    probabilities: [[HeadRow; MAX_DEGREE]; MAX_DEGREE + 1],
+    pub(super) probabilities: [[HeadRow; MAX_DEGREE]; MAX_DEGREE + 1],
 }
 
 // The two ReLU units for a threshold share the same input projection.
@@ -41,29 +41,6 @@ impl Block {
             })
         });
         Self { probabilities }
-    }
-
-    /// # Safety
-    /// The caller must verify AVX2 support.
-    #[cfg(target_arch = "x86_64")]
-    #[target_feature(enable = "avx2")]
-    pub(super) fn forward_avx2(&self, input: &[Token], neighbours: &[usize], i: usize) -> Token {
-        use std::arch::x86_64::*;
-
-        // Each lane corresponds to a single attention head.
-        const _: () = assert!(MAX_DEGREE == 8);
-        // SAFETY: each unaligned load/store spans exactly one eight-float row.
-        let heads = unsafe {
-            let mut sum = _mm256_setzero_ps();
-            for (&key, row) in neighbours.iter().zip(&self.probabilities[neighbours.len()]) {
-                let value = _mm256_set1_ps(input[key][REACHED]);
-                sum = _mm256_add_ps(sum, _mm256_mul_ps(value, _mm256_loadu_ps(row.as_ptr())));
-            }
-            let mut heads = [0.0; MAX_DEGREE];
-            _mm256_storeu_ps(heads.as_mut_ptr(), sum);
-            heads
-        };
-        Self::update(input[i], heads)
     }
 
     fn attend(&self, input: &[Token], neighbours: &[usize]) -> HeadRow {
@@ -107,29 +84,6 @@ impl Block {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[cfg(target_arch = "x86_64")]
-    #[test]
-    fn avx2_matches_portable_for_every_degree() {
-        if !std::is_x86_feature_detected!("avx2") {
-            return;
-        }
-        let block = Block::new();
-        let mut input = [[0.0; WIDTH]; MAX_DEGREE + 1];
-        input[0][ONE] = 1.0;
-        input[0][OPEN] = 1.0;
-        let neighbours: [usize; MAX_DEGREE] = array::from_fn(|i| i + 1);
-        for active in neighbours {
-            input[active][REACHED] = 0.5;
-            for degree in 0..=MAX_DEGREE {
-                let keys = &neighbours[..degree];
-                // SAFETY: AVX2 support was checked above.
-                let actual = unsafe { block.forward_avx2(&input, keys, 0) };
-                assert_eq!(actual, block.forward(&input, keys, 0));
-            }
-            input[active][REACHED] = 0.0;
-        }
-    }
 
     #[test]
     fn fractional_values_follow_the_relu_ramp_and_clear_scratch() {

@@ -67,12 +67,16 @@ before/after run, the 32×32 open, backtracker, and four-goal backtracker cases
 fell from 1,186 / 2,788 / 4,678 µs to 903 / 2,186 / 3,571 µs respectively.
 
 The default x86-64 binary checks for AVX2 once per `Transformer::solve` call,
-outside the cell loop. When available, it accumulates all eight attention heads
-in one 256-bit register. Other CPUs use the portable kernel. No `RUSTFLAGS` are
-needed; globally enabling AVX2 would make the binary unsuitable for older CPUs.
+outside the cell loop. On AVX2, each lane represents one cell. The solver
+packs neighbour indices and softmax weights once per solve, then gathers from
+the previous layer's reached channels. Pointer updates stay local to each
+cell. Other CPUs and mazes beyond the signed gather-index range use the
+portable kernel. No `RUSTFLAGS` are needed.
 
-With runtime dispatch on the AVX2 host, the three 32×32 workloads above took
-846 / 2,096 / 3,294 µs using the same pinned benchmark command.
+On the same 32×32 open, backtracker and four-goal workloads, cell SIMD took
+213 / 456 / 796 µs versus 847 / 2,105 / 3,293 µs for head SIMD, including
+packing time. The tradeoff is memory: each occupied slot of an eight-cell
+batch uses 288 bytes for indices and weights.
 
 The transformer evaluates attention and the MLP on every cell for each distance
 layer of each leg, including walls. Queue BFS processes only its frontier.
