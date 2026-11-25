@@ -53,16 +53,16 @@ uses Manhattan distance for the square-grid heuristic.
 
 | Workload | Cells | `Model::solve` (µs) | Queue BFS (µs) | Bidirectional BFS (µs) | A* (µs) |
 |----------|------:|-------------------:|---------------:|-----------------------:|--------:|
-| Open square 64×64 | 4,096 | 0.1 | 18.9 | 22.9 | 79.5 |
-| Backtracker 64×64 | 4,096 | 11.0 | 7.1 | 8.5 | 13.2 |
-| Open square 128×128 | 16,384 | 0.2 | 83.1 | 104.0 | 437.2 |
-| Backtracker 128×128 | 16,384 | 42.6 | 29.0 | 40.6 | 58.6 |
-| Open square 256×256 | 65,536 | 0.3 | 428.5 | 432.3 | 2,015.5 |
-| Backtracker 256×256 | 65,536 | 385.5 | 302.9 | 340.5 | 358.0 |
-| Open square 512×512 | 262,144 | 0.7 | 2,662.8 | 3,687.9 | 9,138.3 |
-| Backtracker 512×512 | 262,144 | 1,187.1 | 1,090.2 | 1,485.0 | 1,445.3 |
-| Open square 1024×1024 | 1,048,576 | 1.1 | 24,616.5 | 21,386.3 | 40,656.3 |
-| Backtracker 1024×1024 | 1,048,576 | 14,753.2 | 11,163.4 | 13,617.4 | 14,196.0 |
+| Open square 64×64 | 4,096 | 0.1 | 24.0 | 28.8 | 100.9 |
+| Backtracker 64×64 | 4,096 | 9.9 | 6.7 | 8.4 | 13.0 |
+| Open square 128×128 | 16,384 | 0.2 | 82.7 | 100.5 | 432.5 |
+| Backtracker 128×128 | 16,384 | 38.8 | 28.1 | 39.7 | 55.2 |
+| Open square 256×256 | 65,536 | 0.3 | 407.9 | 415.7 | 1,988.6 |
+| Backtracker 256×256 | 65,536 | 301.2 | 293.2 | 323.0 | 335.9 |
+| Open square 512×512 | 262,144 | 0.6 | 2,953.0 | 4,060.4 | 9,068.8 |
+| Backtracker 512×512 | 262,144 | 1,014.1 | 1,095.5 | 1,327.8 | 1,502.7 |
+| Open square 1024×1024 | 1,048,576 | 1.3 | 23,641.7 | 20,457.2 | 40,678.0 |
+| Backtracker 1024×1024 | 1,048,576 | 10,776.7 | 10,226.9 | 13,612.0 | 14,140.9 |
 
 The comparison sweep was rerun on 2026-11-25. Each sample uses one calibration
 solve to choose a repeated batch targeting 10 ms (capped at 1,000,000 solves);
@@ -76,7 +76,7 @@ With a single goal, `Model::solve` grows waves from both the goal and the
 start, widening whichever frontier is smaller, and then rebuilds the route
 `Model::trace` would choose. In an earlier run of the same five-seed sweep the
 goal-only flood took 2,865.8 µs at 512×512 and 23,859.5 µs at 1024×1024. On
-backtracker mazes `solve` still trails queue BFS. Across seven sweeps the
+backtracker mazes `solve` was trailing queue BFS. Across seven sweeps the
 `solve`/queue BFS ratio stayed near 1.6× at 64×64, 1.5× at 128×128 and 1.3×
 at 256×256, moved between 0.8× and 1.1× at 512×512, and ranged 1.18–1.36×
 (median 1.30×) at 1024×1024. Marking the route by walking back from the
@@ -87,7 +87,9 @@ ratios over three interleaved runs to 1.71–1.73× at 64×64, 1.53–1.57× at
 level holds a single route cell, so only a tie needs the forward walk, then
 gave 1.41–1.47× at 64×64, 1.32–1.36× at 128×128, 1.03–1.04× at 256×256,
 0.90–0.91× at 512×512 and 0.91–1.07× at 1024×1024 over three interleaved
-runs. The table above predates both changes.
+runs. The table above includes both changes; its ratios (1.48×, 1.38×, 1.03×,
+0.93× and 1.05×) fall in or next to those ranges. At 1024×1024 run-to-run
+noise is about ±10%, so `solve` and queue BFS are effectively tied there.
 
 ## Server: 321×321 boards
 
