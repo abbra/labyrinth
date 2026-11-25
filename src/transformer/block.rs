@@ -10,152 +10,65 @@ const NBR_REACHED: usize = PTR + MAX_DEGREE;
 const WIDTH: usize = NBR_REACHED + MAX_DEGREE;
 pub(super) type Token = [f32; WIDTH];
 
-// Each value and output projection has a single nonzero coefficient.
-#[derive(Clone, Debug)]
-struct Head {
-    value: (usize, f32),
-    output: (usize, f32),
-    probabilities: [[f32; MAX_DEGREE]; MAX_DEGREE + 1],
-}
-
-impl Head {
-    fn new(slot: usize) -> Self {
-        let mut bias = [-50.0_f32; MAX_DEGREE + 1];
-        bias[slot] = 0.0;
-        bias[MAX_DEGREE] = -25.0; // Sink: counted in softmax, but its value is zero.
-        let mass = bias.map(f32::exp);
-        let probabilities = array::from_fn(|degree| {
-            let total = mass[..degree].iter().sum::<f32>() + mass[MAX_DEGREE];
-            let mut row = [0.0; MAX_DEGREE];
-            for (weight, &mass) in row[..degree].iter_mut().zip(&mass) {
-                *weight = mass / total;
-            }
-            row
-        });
-        Self {
-            value: (REACHED, 1.0),
-            output: (NBR_REACHED + slot, 1.0),
-            probabilities,
-        }
-    }
-
-    fn attend(&self, input: &[Token], neighbours: &[usize]) -> f32 {
-        let (channel, gain) = self.value;
-        let weights = &self.probabilities[neighbours.len()];
-        gain * neighbours
-            .iter()
-            .zip(weights)
-            .map(|(&key, &w)| w * input[key][channel])
-            .sum::<f32>()
-    }
-}
-
-const STEPS: usize = 1 + MAX_DEGREE; // Reached, then one pointer per slot.
-const HIDDEN: usize = 2 * STEPS + 1 + MAX_DEGREE;
-
-#[derive(Clone, Debug)]
-struct Unit {
-    input: Token,
-    nonzero: [u8; WIDTH],
-    len: usize,
-    output: (usize, f32),
-}
-
-impl Unit {
-    fn new(i: usize) -> Self {
-        let mut input = [0.0; WIDTH];
-        let output = if i < 2 * STEPS {
-            // The pair computes ReLU(10z - 4.5) - ReLU(10z - 5.5).
-            let step = i / 2;
-            let target = if step == 0 {
-                // z = sum(neighbours) + degree_limit * (open - one) + goal.
-                input[OPEN] = 10.0 * MAX_DEGREE as f32;
-                input[ONE] = -input[OPEN];
-                input[GOAL] = 10.0;
-                input[NBR_REACHED..].fill(10.0);
-                REACHED
-            } else {
-                // z = open + neighbour[d] - one - goal - reached - sum(earlier).
-                let d = step - 1;
-                input[OPEN] = 10.0;
-                input[ONE] = -10.0;
-                input[GOAL] = -10.0;
-                input[REACHED] = -10.0;
-                input[NBR_REACHED..NBR_REACHED + d].fill(-10.0);
-                input[NBR_REACHED + d] = 10.0;
-                PTR + d
-            };
-            if i.is_multiple_of(2) {
-                input[ONE] -= 4.5;
-                (target, 1.0)
-            } else {
-                input[ONE] -= 5.5;
-                (target, -1.0)
-            }
-        } else {
-            // Subtract old reached and each scratch channel from the residual.
-            let clear = i - 2 * STEPS;
-            let target = if clear == 0 {
-                REACHED
-            } else {
-                NBR_REACHED + clear - 1
-            };
-            input[target] = 1.0;
-            (target, -1.0)
-        };
-        let mut nonzero = [0; WIDTH];
-        let mut len = 0;
-        for (channel, &weight) in input.iter().enumerate() {
-            if weight != 0.0 {
-                nonzero[len] = channel as u8;
-                len += 1;
-            }
-        }
-        Self {
-            input,
-            nonzero,
-            len,
-            output,
-        }
-    }
-
-    fn activate(&self, token: &Token) -> f32 {
-        self.nonzero[..self.len]
-            .iter()
-            .map(|&c| {
-                let c = usize::from(c);
-                self.input[c] * token[c]
-            })
-            .sum::<f32>()
-            .max(0.0)
-    }
-}
+// One row per key slot, with the head dimension contiguous for vectorization.
+type HeadRow = [f32; MAX_DEGREE];
 
 #[derive(Clone, Debug)]
 pub(super) struct Block {
-    heads: [Head; MAX_DEGREE],
-    mlp: [Unit; HIDDEN],
+    probabilities: [[HeadRow; MAX_DEGREE]; MAX_DEGREE + 1],
+}
+
+// The two ReLU units for a threshold share the same input projection.
+#[inline]
+fn step(projected: f32, one: f32) -> f32 {
+    (projected - 4.5 * one).max(0.0) - (projected - 5.5 * one).max(0.0)
 }
 
 impl Block {
     pub(super) fn new() -> Self {
-        Self {
-            heads: array::from_fn(Head::new),
-            mlp: array::from_fn(Unit::new),
+        let sink = (-25.0_f32).exp();
+        let other = (-50.0_f32).exp();
+        let probabilities = array::from_fn(|degree| {
+            array::from_fn(|slot| {
+                array::from_fn(|head| {
+                    let total = if head < degree {
+                        1.0 + sink + (degree - 1) as f32 * other
+                    } else {
+                        sink + degree as f32 * other
+                    };
+                    (if head == slot { 1.0 } else { other }) / total
+                })
+            })
+        });
+        Self { probabilities }
+    }
+
+    fn attend(&self, input: &[Token], neighbours: &[usize]) -> HeadRow {
+        let mut heads = [0.0; MAX_DEGREE];
+        for (&key, weights) in neighbours.iter().zip(&self.probabilities[neighbours.len()]) {
+            let value = input[key][REACHED];
+            for (head, weight) in heads.iter_mut().zip(weights) {
+                *head += weight * value;
+            }
         }
+        heads
     }
 
     pub(super) fn forward(&self, input: &[Token], neighbours: &[usize], i: usize) -> Token {
-        let mut attended = input[i];
-        for head in &self.heads {
-            let (channel, gain) = head.output;
-            attended[channel] += gain * head.attend(input, neighbours);
+        let mut output = input[i];
+        let [one, open, goal, reached, ..] = output;
+        let ptr_base = 10.0 * (open - one - goal - reached);
+        let mut prefix = 0.0;
+        for (slot, value) in self.attend(input, neighbours).into_iter().enumerate() {
+            let scratch = output[NBR_REACHED + slot] + value;
+            let scaled = 10.0 * scratch;
+            // Pointer rows differ only in their selected slot and the negative prefix.
+            output[PTR + slot] += step(ptr_base - prefix + scaled, one);
+            prefix += scaled;
+            output[NBR_REACHED + slot] = scratch - scratch.max(0.0);
         }
-        let mut output = attended;
-        for unit in &self.mlp {
-            let (channel, gain) = unit.output;
-            output[channel] += gain * unit.activate(&attended);
-        }
+        let reach = (10 * MAX_DEGREE) as f32 * (open - one) + 10.0 * goal + prefix;
+        output[REACHED] += step(reach, one) - reached.max(0.0);
         output
     }
 }
@@ -171,7 +84,7 @@ mod tests {
         input[0][ONE] = 1.0;
         input[0][OPEN] = 1.0;
         input[1][REACHED] = 0.5;
-        let leak = block.heads[1].attend(&input, &[1]);
+        let leak = block.attend(&input, &[1])[1];
         assert!(leak > 0.0 && leak < f32::EPSILON);
         let output = block.forward(&input, &[1], 0);
         assert_eq!(output[REACHED], 0.5);

@@ -51,14 +51,14 @@ of the maze and weights was excluded. Each sample's returned path was checked
 for exact equality with queue BFS outside the timer. Backtracker rows use seed 1;
 the four-goal baseline repeats BFS to the nearest unvisited goal.
 
-| Maze | Goals | Steps | Transformer (µs) | `Model::solve` (µs) | Queue BFS (µs) |
-|------|------:|------:|-----------------:|--------------------:|---------------:|
-| Open 16×16 | 1 | 30 | 634.644 | 0.027 | 1.203 |
-| Backtracker 16×16 | 1 | 48 | 1,038.074 | 0.476 | 0.457 |
-| Backtracker 16×16 | 4 | 68 | 1,506.536 | 0.817 | 1.024 |
-| Open 32×32 | 1 | 62 | 5,171.963 | 0.054 | 4.468 |
-| Backtracker 32×32 | 1 | 148 | 12,323.502 | 1.548 | 1.580 |
-| Backtracker 32×32 | 4 | 252 | 21,291.378 | 2.923 | 3.273 |
+| Maze | Goals | Steps | Previous transformer (µs) | Fused transformer (µs) | `Model::solve` (µs) | Queue BFS (µs) |
+|------|------:|------:|--------------------------:|-----------------------:|--------------------:|---------------:|
+| Open 16×16 | 1 | 30 | 637.599 | 143.898 | 0.028 | 1.209 |
+| Backtracker 16×16 | 1 | 48 | 1,024.111 | 232.396 | 0.457 | 0.464 |
+| Backtracker 16×16 | 4 | 68 | 1,506.273 | 341.428 | 0.835 | 1.015 |
+| Open 32×32 | 1 | 62 | 5,132.810 | 1,169.279 | 0.048 | 4.428 |
+| Backtracker 32×32 | 1 | 148 | 12,324.233 | 2,788.006 | 1.578 | 1.592 |
+| Backtracker 32×32 | 4 | 252 | 20,985.182 | 4,643.779 | 2.893 | 3.313 |
 
 The transformer evaluates attention and the MLP on every cell for each distance
 layer of each leg, including walls. Queue BFS processes only its frontier.

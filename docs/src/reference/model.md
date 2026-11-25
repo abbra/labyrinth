@@ -18,7 +18,10 @@ two strategies:
   the goal that was reached. With several goals, `solve` then runs one queue
   BFS leg to the nearest unvisited goal at a time, as `trace` does.
 
-`Transformer::new` constructs the 1,472 weights described below. Its `Solver`
+`Transformer` evaluates the 1,472-parameter block described below without storing
+its matrices densely. Construction precomputes the structural softmax weights;
+the forward pass accumulates all eight heads together and shares projections
+between paired ReLUs and prefix sums between pointer units. Its `Solver`
 implementation evaluates the block on every cell in every iteration, without
 the open-square or wave shortcuts. For each subsequent leg, it re-embeds the
 maze with only the unvisited goals flagged. `Model::parameter_count()` reports
