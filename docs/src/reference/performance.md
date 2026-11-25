@@ -117,17 +117,19 @@ cell. The table above includes all five changes; its ratios are 1.04×, 1.01×,
 ## Server: 321×321 boards
 
 Each board was generated once with the backtracker and seed 1, then solved
-five times through the API. Server time is the median `micros` value from
+five times through the API, with the release server pinned to one core
+(`taskset -c 2`). Server time is the median `micros` value from
 [POST /api/solve](../user-guide/http-api.md#post-apisolve); it excludes HTTP
-and JSON processing.
+and JSON processing. The endpoint runs `Model::trace`, so these times do not
+include the `Model::solve` fast paths.
 
 | Shape | Cells | Path length | Median server time |
 |-------|-------|-------------|--------------------|
-| Square | 103,041 | 10,957 | 3.691 ms |
-| Hexagon | 103,041 | 5,250 | 3.000 ms |
-| Triangle | 103,041 | 10,115 | 3.044 ms |
-| Penrose rhombs | 126,940 | 4,373 | 2.006 ms |
-| Kites and darts | 78,514 | 6,841 | 3.513 ms |
+| Square | 103,041 | 10,957 | 2.386 ms |
+| Hexagon | 103,041 | 5,250 | 1.526 ms |
+| Triangle | 103,041 | 10,115 | 1.535 ms |
+| Penrose rhombs | 126,940 | 4,373 | 1.299 ms |
+| Kites and darts | 78,514 | 6,841 | 2.262 ms |
 
 ## Memory use
 
