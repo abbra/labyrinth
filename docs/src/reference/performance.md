@@ -90,18 +90,24 @@ The seed-1 backtracker fell from 25.98 to 13.65 seconds and its four-goal
 variant from 98.43 to 48.01 seconds (one sample each). Irregular graphs with
 few repeated degree patterns need not see the same savings.
 
-On irregular graphs the order of those patterns matters. Once packed weights
-exceed 8 MiB, the packer starts a fresh lookup window and resets it after each
-additional 64 KiB of newly packed weights. Existing offsets remain valid.
-Nearby repeats can still share; distant repeats get another copy in traversal
-order. These are weight-data budgets, not bounds on total allocation.
+On irregular graphs the order of those patterns matters. The packer checks reuse
+after the first 8 MiB of weights and after each additional 64 KiB. If hits within
+64 KiB of the write position saved at least half a sample's worth of weight rows,
+it keeps the lookup table; otherwise it clears the table so distant repeats get
+new copies in traversal order. Existing offsets remain valid. These are sampling
+intervals, not bounds on total allocation.
 
 On a 262,144-cell graph with degrees 1–8 in every batch, scattering 16,384
 patterns (two uses each) took 179 ms with per-batch weights, 271 ms with global
-sharing, and 172 ms with windowed sharing. Placing identical patterns together
+sharing, and 172 ms with fixed 64 KiB windows. Placing identical patterns together
 instead took 182 / 109 / 119 ms respectively. On a 512×512 open square the
 same kernels took 1,626 / 814 / 818 ms. Times are five-solve medians on one
 pinned Ryzen AI 9 HX 370 core, including packing; all routes matched queue BFS.
+
+In a nine-pass comparison, adapting those windows reduced the median for
+16,384 clustered patterns from 119.8 to 110.1 ms (global sharing: 111.4 ms).
+Scattered pairs took 175.5 versus 175.4 ms with fixed windows; on the open
+512×512 square, adaptive took 821 versus 812 ms. All timed routes matched BFS.
 
 The transformer evaluates attention and the MLP on every cell for each distance
 layer of each leg, including walls. Queue BFS processes only its frontier.

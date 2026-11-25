@@ -32,6 +32,7 @@ pub(super) fn solve(block: &Block, maze: &Maze) -> Option<Vec<usize>> {
     let mut weights: Vec<WeightRow> = Vec::new();
     let mut patterns = HashMap::new();
     let mut window_end = SHARED_ROWS;
+    let mut recent_hits = 0;
     let mut batch_layout = Vec::with_capacity(batches);
     let mut open = Vec::with_capacity(batches);
     let mut goal = vec![[0.0; LANES]; batches];
@@ -52,10 +53,19 @@ pub(super) fn solve(block: &Block, maze: &Maze) -> Option<Vec<usize>> {
         // Batches with the same lane degrees have identical attention weights.
         let degrees = neighbours.map(|row| row.len() as u8);
         let count = usize::from(*degrees.iter().max().unwrap());
-        // Small tables stay shared. Beyond that, keep nearby repeats but stream
-        // distant ones in batch order instead of gathering cold weight rows.
-        if weights.len() > window_end {
-            patterns.clear();
+        // Extend a window when short-distance hits saved at least half as many
+        // rows as we appended. Otherwise restart it to keep cold reads streaming.
+        let previous_len = weights.len();
+        if previous_len > window_end {
+            let sample = if window_end == SHARED_ROWS {
+                SHARED_ROWS
+            } else {
+                LOCAL_ROWS
+            };
+            if recent_hits < sample / 2 {
+                patterns.clear();
+            }
+            recent_hits = 0;
             window_end = weights.len() + LOCAL_ROWS;
         }
         let offset = *patterns.entry(degrees).or_insert_with(|| {
@@ -69,6 +79,9 @@ pub(super) fn solve(block: &Block, maze: &Maze) -> Option<Vec<usize>> {
             }));
             offset
         });
+        if offset < previous_len && previous_len - offset <= LOCAL_ROWS {
+            recent_hits += count;
+        }
         let start = keys.len();
         for k in 0..count {
             let indices: [i32; LANES] =
