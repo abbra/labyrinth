@@ -11,13 +11,18 @@ use std::collections::{BinaryHeap, VecDeque};
 use std::hint::black_box;
 use std::time::Duration;
 
-use labyrinth::{Cell, Maze, Model};
+use labyrinth::{Cell, Maze, Model, Solver, Transformer};
 
 const SWEEP_SIDES: [usize; 5] = [64, 128, 256, 512, 1024];
 const SEEDS: [u64; 5] = [1, 2, 3, 4, 5];
 const RUNS: usize = 9;
 
 fn main() {
+    match std::env::args().nth(1).as_deref() {
+        Some("--transformer") => return transformer_sweep(),
+        Some(arg) => panic!("unknown argument {arg}; use --transformer or no arguments"),
+        None => {}
+    }
     for side in SWEEP_SIDES {
         let open = open_square(side);
         report(
@@ -27,14 +32,7 @@ fn main() {
             benchmark(&open, side),
         );
 
-        // Square generation only reads these fields; skip expensive polygon geometry.
-        let board = board::Board {
-            shape: board::Shape::Square,
-            width: side,
-            height: side,
-            polygons: Vec::new(),
-            neighbours: Vec::new(),
-        };
+        let board = square_board(side);
         // Per-solver medians of each seed's median, so one lucky maze cannot dominate.
         let mut per_seed: [Vec<f64>; 4] = std::array::from_fn(|_| Vec::new());
         let mut per_seed_goals: [Vec<f64>; 2] = std::array::from_fn(|_| Vec::new());
@@ -72,6 +70,62 @@ fn main() {
         );
         println!("model_solve_us={model:.1}");
         println!("nearest_goal_bfs_us={bfs:.1}");
+    }
+}
+
+fn square_board(side: usize) -> board::Board {
+    // Square generation only reads the dimensions; skip expensive polygon geometry.
+    board::Board {
+        shape: board::Shape::Square,
+        width: side,
+        height: side,
+        polygons: Vec::new(),
+        neighbours: Vec::new(),
+    }
+}
+
+fn transformer_sweep() {
+    let transformer = Transformer::new();
+    let model = Model::new();
+    for side in [16, 32] {
+        let mut cells =
+            generate::generate(&square_board(side), generate::Algorithm::Backtracker, 1);
+        let backtracker = square_maze(side, &cells);
+        let (far, mid) = ((side - 3) | 1, (side / 2) | 1);
+        for (row, col) in [(1, far), (far, 1), (mid, mid)] {
+            cells[row * side + col] = b'G';
+        }
+        for (name, maze) in [
+            ("open", open_square(side)),
+            ("backtracker", backtracker),
+            ("backtracker_multi", square_maze(side, &cells)),
+        ] {
+            let bfs = if maze.goals().len() == 1 {
+                queue_bfs
+            } else {
+                nearest_goal_bfs
+            };
+            let expected = bfs(&maze).expect("benchmark maze is solvable");
+            let mut times: [Vec<Duration>; 3] = std::array::from_fn(|_| Vec::with_capacity(RUNS));
+            for run in 0..RUNS {
+                for offset in 0..3 {
+                    let solver = (run + offset) % 3;
+                    let (elapsed, path) = match solver {
+                        0 => timing::time_batch(|| transformer.solve(black_box(&maze))),
+                        1 => time_model(&model, &maze),
+                        _ => timing::time_batch(|| bfs(black_box(&maze))),
+                    };
+                    assert_eq!(path, expected, "{name} side {side}, solver {solver}");
+                    times[solver].push(elapsed);
+                }
+            }
+            let [transformer, model, bfs] = times.map(|mut samples| median_us(&mut samples));
+            println!(
+                "{name} {side}x{side} goals={} steps={} transformer_us={transformer:.3} model_us={model:.3} bfs_us={bfs:.3}",
+                maze.goals().len(),
+                expected.len() - 1
+            );
+        }
     }
 }
 

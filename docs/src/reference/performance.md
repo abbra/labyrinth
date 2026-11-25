@@ -42,6 +42,29 @@ without the counting allocator. Its nine-sample median speed-up is 20,990×;
 it reports `solve_ms=0.001` (rounded to 0.001 ms) and `queue_bfs_ms=24.517`.
 It validates each route outside the timed batch.
 
+### Full transformer versus optimized solve and queue BFS
+
+Reproduce with `taskset -c 2 cargo run --release --example bfs_compare -- --transformer`.
+Times below are median microseconds per complete route over nine calibrated
+batches, rotating solver order. All three solvers used the same maze; construction
+of the maze and weights was excluded. Each sample's returned path was checked
+for exact equality with queue BFS outside the timer. Backtracker rows use seed 1;
+the four-goal baseline repeats BFS to the nearest unvisited goal.
+
+| Maze | Goals | Steps | Transformer (µs) | `Model::solve` (µs) | Queue BFS (µs) |
+|------|------:|------:|-----------------:|--------------------:|---------------:|
+| Open 16×16 | 1 | 30 | 634.644 | 0.027 | 1.203 |
+| Backtracker 16×16 | 1 | 48 | 1,038.074 | 0.476 | 0.457 |
+| Backtracker 16×16 | 4 | 68 | 1,506.536 | 0.817 | 1.024 |
+| Open 32×32 | 1 | 62 | 5,171.963 | 0.054 | 4.468 |
+| Backtracker 32×32 | 1 | 148 | 12,323.502 | 1.548 | 1.580 |
+| Backtracker 32×32 | 4 | 252 | 21,291.378 | 2.923 | 3.273 |
+
+The transformer evaluates attention and the MLP on every cell for each distance
+layer of each leg, including walls. Queue BFS processes only its frontier.
+`Model::solve` bypasses search entirely on these open squares; its sub-microsecond
+timings should be treated as approximate.
+
 ### Comparing solve algorithms
 
 `cargo run --release --example bfs_compare` compares `Model::solve` with
