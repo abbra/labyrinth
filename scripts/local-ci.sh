@@ -81,7 +81,8 @@ job_doc() {
         fail "mdbook not found (install with: cargo install mdbook)"
         return 1
     fi
-    mdbook build docs && mdbook test docs -L target/release
+    cargo build -q --release -p labyrinth &&
+        mdbook build docs && mdbook test docs -L target/release
 }
 job_examples() {
     local maze='S.#
