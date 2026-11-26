@@ -11,6 +11,8 @@ use std::collections::{BinaryHeap, VecDeque};
 use std::hint::black_box;
 use std::time::Duration;
 
+#[path = "bfs_compare/gh_base.rs"]
+mod gh_base;
 #[path = "bfs_compare/nearest.rs"]
 mod nearest;
 #[path = "bfs_compare/options.rs"]
@@ -18,13 +20,14 @@ mod options;
 
 use labyrinth::{Cell, Maze, Model, Solver, Transformer, WallSkippingTransformer};
 
-const METHODS: [&str; 6] = [
+const METHODS: [&str; 7] = [
     "model",
     "bfs",
     "bidirectional_bfs",
     "a_star",
     "transformer",
     "wall_skipping",
+    "gh_scan_base",
 ];
 
 fn main() {
@@ -115,6 +118,7 @@ fn benchmark(name: &str, side: usize, seed: Option<usize>, runs: usize, maze: &M
                     3 => nearest::visit(maze, |s, g| a_star(maze, side, s, g)),
                     4 => transformer.solve(maze),
                     5 => compact.solve(maze),
+                    6 => gh_base::solve(maze),
                     _ => unreachable!(),
                 }
             });

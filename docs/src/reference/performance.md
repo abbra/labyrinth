@@ -46,10 +46,10 @@ It validates each route outside the timed batch.
 
 ### Running the shared algorithm sweep
 
-`cargo run --release --example bfs_compare` runs all six methods on the same
+`cargo run --release --example bfs_compare` runs seven methods on the same
 16×16 and 32×32 boards: `Model`, queue BFS, bidirectional BFS, Manhattan A*,
-the dense transformer and the wall-skipping transformer. The default is nine
-rotated samples, an open board and seed 1 for both backtracker workloads.
+both transformers and the Gholami–Hajiaghayi scan base case. The default is
+nine rotated samples, an open board and seed 1 for both backtracker workloads.
 Results are per-board medians in microseconds; seeds are reported separately.
 
 ```sh
@@ -68,7 +68,40 @@ On four-goal backtrackers, the point-to-point algorithms search each remaining
 target and take the shortest leg, breaking ties by neighbour-slot order.
 This extra target-selection work is timed, not supplied by the BFS oracle.
 
+### Weighted single-source search on unit-edge mazes
+
+[`gh_scan_base` implements Algorithm 8, lines 3–6](https://arxiv.org/html/2611.34911v1#algorithm8).
+The problem in the paper is distances from one source to **all** reachable vertices.
+Its randomized hierarchy is never selected here: the base case applies when
+*N* ≤ ⌈log₂(*N* + 2)⌉⁶⁴, including every supported maze. Our edges are all
+positive and unit length, so there are no zero-edge components to contract.
+Each leg scans finite unsettled labels for Dijkstra's minimum until none remain,
+then builds the entire predecessor tree by traversing tight edges in queue and
+neighbour-slot order. The first remaining goal in this traversal supplies the leg;
+neither pass stops there. Unreachable cells retain infinite distance.
+
+Median µs per solve, five rotated calibrated batches on CPU 2, seed 1 for backtrackers
+(`--sizes 32,64 --runs 5`). All six boards matched the queue BFS reference route.
+
+| Side | Board | GH scan base | Queue BFS | Model |
+|---:|---|---:|---:|---:|
+| 32 | Open | 26.955 | 4.740 | 0.045 |
+| 32 | Single-goal backtracker | 6.179 | 1.634 | 1.634 |
+| 32 | Four-goal backtracker | 25.043 | 3.468 | 2.972 |
+| 64 | Open | 119.494 | 17.663 | 0.105 |
+| 64 | Single-goal backtracker | 28.949 | 6.462 | 6.982 |
+| 64 | Four-goal backtracker | 156.231 | 25.144 | 22.698 |
+
+The useful idea is to separate distance computation from deterministic readout:
+a tight edge advances exactly one BFS level here. `Model` already uses that
+condition to resolve tied meeting paths without building a full source tree.
+The transformer records the first eligible downhill slot at wave arrival; a
+separate tree pass would duplicate that decision and would not reduce layer
+count. These results compare the base case, **not** the weighted hierarchy.
+
 ### Shared sweep results
+
+This earlier sweep predates the seventh method.
 
 Times are microseconds per complete solve, including packing but excluding maze and
 solver construction. Each entry is one calibrated batch, not a multi-run median.
