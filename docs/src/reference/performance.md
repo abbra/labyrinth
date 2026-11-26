@@ -44,9 +44,33 @@ without the counting allocator. Its nine-sample median speed-up is 18,066×;
 it reports `solve_ms=0.001` (rounded to 0.001 ms) and `queue_bfs_ms=22.961`.
 It validates each route outside the timed batch.
 
-### Dense and wall-skipping transformers versus optimized solve and queue BFS
+### Running the shared algorithm sweep
 
-Reproduce with `taskset -c 2 cargo run --release --example bfs_compare -- --transformer`.
+`cargo run --release --example bfs_compare` runs all six methods on the same
+16×16 and 32×32 boards: `Model`, queue BFS, bidirectional BFS, Manhattan A*,
+the dense transformer and the wall-skipping transformer. The default is nine
+rotated samples, an open board and seed 1 for both backtracker workloads.
+Results are per-board medians in microseconds; seeds are reported separately.
+
+```sh
+# All powers of two from 16 through 2048, all three workloads, one sample per method
+cargo run --release --example bfs_compare -- --sizes all --runs 1
+# Select just the endpoint or a subset without running the intermediate sizes
+cargo run --release --example bfs_compare -- --sizes 2048 --workload open --runs 1
+cargo run --release --example bfs_compare -- --sizes 32,64 --workload multi --seeds 5
+```
+
+Large transformer solves can be expensive: each layer scans the board, and
+a long four-goal route needs many layers. Nothing is skipped at large sizes.
+One board is benchmarked at a time. The first timed solve sets the batch
+length and counts as a sample by itself if no repetitions are needed.
+On four-goal backtrackers, the point-to-point algorithms search each remaining
+target and take the shortest leg, breaking ties by neighbour-slot order.
+This extra target-selection work is timed, not supplied by the BFS oracle.
+
+### Full transformer versus optimized solve and queue BFS
+
+The following results are from the previous four-method sweep.
 Times below are median microseconds per complete route over nine calibrated
 batches, rotating solver order. Each solver used the same maze. Timing excludes
 maze and solver construction, but includes per-solve packing.
@@ -155,12 +179,10 @@ timings should be treated as approximate.
 
 ### Comparing solve algorithms
 
-`cargo run --release --example bfs_compare` compares `Model::solve` with
-queue-based BFS, bidirectional BFS, and A* on both open-square and deterministic
-square backtracker mazes at every open-square sweep size: 64, 128, 256, 512,
-and 1024. Backtracker rows are the median over seeds 1–5 of each seed's
-median. Maze generation and construction are outside the timed region. A*
-uses Manhattan distance for the square-grid heuristic.
+The historical classical sweep below compared `Model::solve` with queue BFS,
+bidirectional BFS, and Manhattan A* on open squares and deterministic
+backtrackers. Backtracker rows are the median over seeds 1–5 of each seed's
+median. Maze generation and construction were outside the timed region.
 
 | Workload | Cells | `Model::solve` (µs) | Queue BFS (µs) | Bidirectional BFS (µs) | A* (µs) |
 |----------|------:|-------------------:|---------------:|-----------------------:|--------:|
@@ -196,8 +218,8 @@ rooms next to the other two corners and in the centre room. The baseline,
 nearest-goal BFS, runs one queue BFS leg from the current cell to the nearest
 unvisited goal until every goal is visited, which is the route `Model::solve`
 returns. Both routes are checked for endpoints, edges, length and goal
-coverage outside the timed region. Bidirectional BFS and A* need a single
-target, so they are not run. Same run, settings and seeds as the table above.
+coverage outside the timed region. This historical comparison did not run
+bidirectional BFS or A* on multiple goals. Settings and seeds match the table above.
 The ratio is model time divided by nearest-goal BFS time (lower is better).
 
 | Workload | Cells | `Model::solve` (µs) | Nearest-goal BFS (µs) | Ratio |

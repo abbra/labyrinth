@@ -1,6 +1,7 @@
 const SIZES: [usize; 8] = [16, 32, 64, 128, 256, 512, 1024, 2048];
 
-pub(super) const HELP: &str = "Usage: bfs_compare [--sizes LIST|all] [--runs N] [--seeds N] [--workload NAME]
+pub(super) const HELP: &str =
+    "Usage: bfs_compare [--sizes LIST|all] [--runs N] [--seeds N] [--workload NAME]
   --sizes LIST|all   Comma-separated powers of two from 16 through 2048 (default: 16,32)
   --runs N           Timed runs per case (default: 9)
   --seeds N          Use sequential seeds 1 through N (default: 1)
@@ -52,7 +53,9 @@ pub(super) fn parse(mut args: impl Iterator<Item = String>) -> Result<Options, S
             "--workload" => {
                 let name = value()?;
                 if !matches!(name.as_str(), "open" | "backtracker" | "multi") {
-                    return Err(format!("invalid --workload {name:?}; expected open, backtracker, or multi"));
+                    return Err(format!(
+                        "invalid --workload {name:?}; expected open, backtracker, or multi"
+                    ));
                 }
                 options.workload = Some(name);
             }
@@ -100,8 +103,17 @@ mod tests {
     #[test]
     fn invalid_input() {
         for input in [
-            "--sizes 8", "--sizes 48", "--sizes 4096", "--sizes 16,", "--sizes bad",
-            "--sizes", "--runs 0", "--seeds 0", "--runs -1", "--workload other", "--transformer",
+            "--sizes 8",
+            "--sizes 48",
+            "--sizes 4096",
+            "--sizes 16,",
+            "--sizes bad",
+            "--sizes",
+            "--runs 0",
+            "--seeds 0",
+            "--runs -1",
+            "--workload other",
+            "--transformer",
         ] {
             assert!(options(input).is_err(), "accepted {input:?}");
         }
