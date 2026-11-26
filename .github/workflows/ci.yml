@@ -147,6 +147,8 @@ jobs:
         run: |
           cargo install --locked mdbook@0.5.4
           cargo install --locked mdbook-mermaid@0.17.1
+      - name: Add the cargo binaries to PATH
+        run: echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
       - name: Build the book and run its doctests
         run: ./scripts/local-ci.sh --no-deps doc
 
