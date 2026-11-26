@@ -53,10 +53,10 @@ rotated samples, an open board and seed 1 for both backtracker workloads.
 Results are per-board medians in microseconds; seeds are reported separately.
 
 ```sh
-# All powers of two from 16 through 2048, all three workloads, one sample per method
-cargo run --release --example bfs_compare -- --sizes all --runs 1
+# All powers of two from 16 through 1024, all three workloads, one sample per method
+taskset -c 2 cargo run --release --example bfs_compare -- --sizes all --runs 1
 # Select just the endpoint or a subset without running the intermediate sizes
-cargo run --release --example bfs_compare -- --sizes 2048 --workload open --runs 1
+cargo run --release --example bfs_compare -- --sizes 1024 --workload open --runs 1
 cargo run --release --example bfs_compare -- --sizes 32,64 --workload multi --seeds 5
 ```
 
@@ -68,38 +68,49 @@ On four-goal backtrackers, the point-to-point algorithms search each remaining
 target and take the shortest leg, breaking ties by neighbour-slot order.
 This extra target-selection work is timed, not supplied by the BFS oracle.
 
-### Full transformer versus optimized solve and queue BFS
+### Shared sweep results
 
-The following results are from the previous four-method sweep.
-Times below are median microseconds per complete route over nine calibrated
-batches, rotating solver order. Each solver used the same maze. Timing excludes
-maze and solver construction, but includes per-solve packing.
-The returned path was checked for exact equality with queue BFS after each batch.
-Backtracker rows use seed 1;
-the four-goal baseline repeats BFS to the nearest unvisited goal.
+Times are microseconds per complete solve, including packing but excluding maze and
+solver construction. Each entry is one calibrated batch, not a multi-run median.
+Both backtracker workloads use seed 1. Routes were checked against queue BFS
+outside the timer; single-target A* and bidirectional BFS may return a different
+valid shortest path. Steps count edges, including revisits between goals.
 
-| Maze | Goals | Steps | Dense transformer (µs) | Wall-skipping transformer (µs) | `Model::solve` (µs) | Queue BFS (µs) |
-|------|------:|------:|-----------------------:|-------------------------------:|--------------------:|---------------:|
-| Open 16×16 | 1 | 30 | 21.082 | 20.966 | 0.028 | 1.219 |
-| Backtracker 16×16 | 1 | 48 | 32.304 | 13.799 | 0.512 | 0.496 |
-| Backtracker 16×16 | 4 | 68 | 46.788 | 19.860 | 0.851 | 1.051 |
-| Open 32×32 | 1 | 62 | 166.426 | 164.387 | 0.057 | 4.592 |
-| Backtracker 32×32 | 1 | 148 | 381.987 | 169.827 | 1.567 | 1.598 |
-| Backtracker 32×32 | 4 | 252 | 660.672 | 287.412 | 2.965 | 3.382 |
+#### Open square
 
-### Large-board transformer scaling
+| Side | Steps | Model | Queue BFS | Bidirectional BFS | A* | Dense transformer | Wall-skipping |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| 16 | 30 | 0.039 | 1.632 | 1.898 | 4.481 | 28.763 | 28.567 |
+| 32 | 62 | 0.073 | 6.368 | 7.322 | 23.533 | 227.660 | 224.287 |
+| 64 | 126 | 0.097 | 17.208 | 23.148 | 77.669 | 1,307.512 | 1,325.268 |
+| 128 | 254 | 0.166 | 87.903 | 100.850 | 435.314 | 11,382.220 | 11,173.969 |
+| 256 | 510 | 0.282 | 401.974 | 561.051 | 2,026.624 | 94,167.213 | 106,153.158 |
+| 512 | 1,022 | 0.549 | 3,280.320 | 5,590.026 | 9,215.665 | 786,307.056 | 762,554.075 |
+| 1024 | 2,046 | 1.157 | 24,449.130 | 25,450.173 | 43,252.260 | 7,941,636.250 | 7,675,718.618 |
 
-A separate run extended the same three workloads through 512×512. Each entry
-is the median of three individual full solves in milliseconds, including packing;
-all 36 routes matched queue BFS exactly. These are absolute times for the shipped
-kernel, not speedups over BFS or over a previous revision.
+#### Single-goal backtracker
 
-| Side | Open (ms) | Backtracker (ms) | Four-goal backtracker (ms) |
-|-----:|----------:|-----------------:|--------------------------:|
-| 64 | 1.41 | 5.71 | 17.23 |
-| 128 | 11.85 | 95.70 | 133.20 |
-| 256 | 94.76 | 1,513.60 | 2,614.36 |
-| 512 | 820.23 | 13,268.00 | 45,401.04 |
+| Side | Steps | Model | Queue BFS | Bidirectional BFS | A* | Dense transformer | Wall-skipping |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| 16 | 48 | 0.691 | 0.715 | 0.678 | 1.092 | 44.666 | 18.962 |
+| 32 | 148 | 2.095 | 1.998 | 2.222 | 3.340 | 435.334 | 175.789 |
+| 64 | 532 | 6.731 | 6.213 | 7.512 | 13.028 | 5,426.768 | 2,482.206 |
+| 128 | 2,128 | 30.221 | 48.705 | 40.739 | 118.905 | 93,024.423 | 41,215.949 |
+| 256 | 8,192 | 264.464 | 345.443 | 344.078 | 464.817 | 1,462,386.599 | 665,285.128 |
+| 512 | 16,168 | 604.002 | 666.642 | 955.421 | 859.096 | 12,876,648.949 | 5,723,830.578 |
+| 1024 | 68,176 | 13,149.515 | 16,511.088 | 18,496.633 | 23,624.208 | 266,718,459.321 | 122,528,564.667 |
+
+#### Four-goal backtracker
+
+| Side | Steps | Model | Queue BFS | Bidirectional BFS | A* | Dense transformer | Wall-skipping |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| 16 | 68 | 1.214 | 1.382 | 4.873 | 7.444 | 63.590 | 28.154 |
+| 32 | 252 | 2.924 | 3.345 | 13.953 | 23.107 | 661.798 | 281.913 |
+| 64 | 1,584 | 21.743 | 23.895 | 88.918 | 245.904 | 16,758.383 | 7,521.498 |
+| 128 | 2,900 | 68.672 | 82.145 | 420.596 | 1,099.361 | 128,927.558 | 56,802.759 |
+| 256 | 14,164 | 999.948 | 1,071.563 | 3,726.544 | 6,431.468 | 2,571,848.050 | 1,189,108.491 |
+| 512 | 55,516 | 8,807.186 | 10,161.314 | 35,800.602 | 54,139.419 | 46,273,408.889 | 19,363,435.728 |
+| 1024 | 153,472 | 54,000.274 | 60,504.720 | 152,988.793 | 281,185.963 | 582,752,915.445 | 260,246,040.361 |
 
 ### Why weight layout matters
 

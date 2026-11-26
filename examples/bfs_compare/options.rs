@@ -1,8 +1,8 @@
-const SIZES: [usize; 8] = [16, 32, 64, 128, 256, 512, 1024, 2048];
+const SIZES: [usize; 7] = [16, 32, 64, 128, 256, 512, 1024];
 
 pub(super) const HELP: &str =
     "Usage: bfs_compare [--sizes LIST|all] [--runs N] [--seeds N] [--workload NAME]
-  --sizes LIST|all   Comma-separated powers of two from 16 through 2048 (default: 16,32)
+  --sizes LIST|all   Comma-separated powers of two from 16 through 1024 (default: 16,32)
   --runs N           Timed runs per case (default: 9)
   --seeds N          Use sequential seeds 1 through N (default: 1)
   --workload NAME    Limit to open, backtracker, or multi (default: all three)
@@ -33,7 +33,7 @@ pub(super) fn parse(mut args: impl Iterator<Item = String>) -> Result<Options, S
                 } else {
                     for item in list.split(',') {
                         let size = item.parse().ok().filter(|n| SIZES.contains(n)).ok_or_else(|| {
-                            format!("invalid --sizes entry {item:?}; expected a power of two from 16 through 2048")
+                            format!("invalid --sizes entry {item:?}; expected a power of two from 16 through 1024")
                         })?;
                         options.sizes.push(size);
                     }
@@ -88,14 +88,14 @@ mod tests {
     fn all_sizes() {
         assert_eq!(
             options("--sizes all").unwrap().sizes,
-            [16, 32, 64, 128, 256, 512, 1024, 2048]
+            [16, 32, 64, 128, 256, 512, 1024]
         );
     }
 
     #[test]
     fn explicit_options() {
-        let opts = options("--sizes 16,512,2048 --seeds 3 --workload multi --runs 4").unwrap();
-        assert_eq!(opts.sizes, [16, 512, 2048]);
+        let opts = options("--sizes 16,512,1024 --seeds 3 --workload multi --runs 4").unwrap();
+        assert_eq!(opts.sizes, [16, 512, 1024]);
         assert_eq!((opts.runs, opts.seeds), (4, 3));
         assert_eq!(opts.workload.as_deref(), Some("multi"));
     }
@@ -105,7 +105,7 @@ mod tests {
         for input in [
             "--sizes 8",
             "--sizes 48",
-            "--sizes 4096",
+            "--sizes 2048",
             "--sizes 16,",
             "--sizes bad",
             "--sizes",
