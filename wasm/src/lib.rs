@@ -4,6 +4,8 @@
 mod board;
 #[path = "../../server/src/generate.rs"]
 mod generate;
+#[path = "../../server/src/solvers.rs"]
+mod solvers;
 
 #[cfg(not(target_family = "wasm"))]
 use std::time::Instant;
@@ -81,10 +83,14 @@ pub fn solve_maze(
     width: usize,
     height: usize,
     cells: &str,
+    solver: &str,
 ) -> Result<String, JsValue> {
     check_side(width).map_err(error)?;
     check_side(height).map_err(error)?;
-    let board = Board::new(parse_shape(shape)?, width, height);
+    let shape = parse_shape(shape)?;
+    let method =
+        solvers::parse_method(solver).ok_or_else(|| error(solvers::unknown_method(solver)))?;
+    let board = Board::new(shape, width, height);
     let maze = board.maze(cells.as_bytes()).map_err(error)?;
     let tokens = maze.cells().len();
     let open_cells = maze
@@ -96,24 +102,20 @@ pub fn solve_maze(
     let started = performance_now();
     #[cfg(not(target_family = "wasm"))]
     let started = Instant::now();
-    let trace = Model::new().trace(&maze);
+    let outcome =
+        solvers::solve(&maze, (shape == Shape::Square).then_some(width), method).map_err(error)?;
     #[cfg(target_family = "wasm")]
     let micros = ((performance_now() - started) * 1000.0) as u128;
     #[cfg(not(target_family = "wasm"))]
     let micros = started.elapsed().as_micros();
-    let reached_cells = trace
-        .reached_at
-        .iter()
-        .filter(|time| time.is_some())
-        .count();
     json(&Solved {
-        path: trace.path,
-        reached_at: trace.reached_at,
-        loops: trace.loops,
+        path: outcome.path,
+        reached_at: outcome.reached_at,
+        loops: outcome.loops,
         tokens,
-        token_passes: trace.token_passes,
+        token_passes: outcome.token_passes,
         micros,
-        reached_cells,
+        reached_cells: outcome.reached_cells,
         open_cells,
     })
 }
