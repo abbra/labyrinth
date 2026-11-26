@@ -37,16 +37,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - name: Restore mdbook binaries
-        id: tools
-        uses: actions/cache@v6
-        with:
-          path: |
-            ~/.cargo/bin/mdbook
-            ~/.cargo/bin/mdbook-mermaid
-          key: mdbook-${{ env.MDBOOK_VERSION }}-mermaid-${{ env.MDBOOK_MERMAID_VERSION }}
+      # No cache: the CI doc job runs in a Fedora container and caches
+      # /github/home paths, which do not land in $HOME on hosted runners.
       - name: Install mdbook and mdbook-mermaid
-        if: steps.tools.outputs.cache-hit != 'true'
         run: |
           cargo install --locked "mdbook@$MDBOOK_VERSION"
           cargo install --locked "mdbook-mermaid@$MDBOOK_MERMAID_VERSION"
