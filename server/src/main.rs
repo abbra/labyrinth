@@ -1,11 +1,12 @@
 //! Web front end for the fixed-rule maze solver.
 //!
 //! `GET /` serves the single-page UI, `POST /api/generate` builds a maze and
-//! `POST /api/solve` runs the model and returns the path plus execution statistics.
+//! `POST /api/solve` runs a selected solver and returns the path plus statistics.
 
 mod alloc;
 mod board;
 mod generate;
+mod solvers;
 
 use std::sync::Arc;
 use std::time::Instant;
@@ -132,15 +133,22 @@ struct SolveRequest {
     width: usize,
     height: usize,
     cells: String,
+    /// Solver wire name; defaults to the model for older clients.
+    #[serde(default = "default_solver")]
+    solver: String,
+}
+
+fn default_solver() -> String {
+    "model".into()
 }
 
 #[derive(Serialize)]
 struct SolveResponse {
     /// Cell ids from start through every goal, or `None` when any goal is unreachable.
     path: Option<Vec<usize>>,
-    /// Loop index at which the flood from all goals reached each cell.
+    /// Loop, wave or distance index at which the search reached each cell.
     reached_at: Vec<Option<usize>>,
-    /// Solver loop iterations until the start is reached or the flood stops.
+    /// Model loop iterations, or the largest search wave or distance.
     loops: usize,
     /// Tokens in the sequence: one per cell.
     tokens: usize,
@@ -175,29 +183,34 @@ async fn solve(
         .map_err(|e| BadRequest(format!("invalid maze: {e}")))?;
     let tokens = board.len();
     let open_cells = req.cells.bytes().filter(|&b| b != b'#').count();
+    let method = solvers::parse_method(&req.solver)
+        .ok_or_else(|| BadRequest(solvers::unknown_method(&req.solver)))?;
+    let square_width = (req.shape == Shape::Square).then_some(req.width);
     let permit = state
         .solve_slots
         .clone()
         .acquire_owned()
         .await
         .expect("solve semaphore remains open");
-    let model = state.model.clone();
-    let ((trace, micros), heap) = tokio::task::spawn_blocking(move || {
+    let ((outcome, micros), heap) = tokio::task::spawn_blocking(move || {
         let _permit = permit;
         alloc::measure(|| {
             let started = Instant::now();
-            let trace = model.trace(&maze);
-            (trace, started.elapsed().as_micros())
+            (
+                solvers::solve(&maze, square_width, method),
+                started.elapsed().as_micros(),
+            )
         })
     })
     .await
     .expect("solver panicked");
+    let outcome = outcome.map_err(BadRequest)?;
     Ok(Json(SolveResponse {
-        path: trace.path,
-        reached_cells: trace.reached_at.iter().flatten().count(),
-        reached_at: trace.reached_at,
-        token_passes: trace.token_passes,
-        loops: trace.loops,
+        path: outcome.path,
+        reached_cells: outcome.reached_cells,
+        reached_at: outcome.reached_at,
+        token_passes: outcome.token_passes,
+        loops: outcome.loops,
         tokens,
         open_cells,
         micros,
