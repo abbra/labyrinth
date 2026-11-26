@@ -32,6 +32,11 @@ assert_eq!(solver.solve(&maze), Some(vec![0, 1, 2]));
 # Ok::<(), labyrinth::MazeError>(())
 ```
 
+Use `labyrinth::WallSkippingTransformer::new()` with the same `Solver` trait to
+skip wall updates. Wall neighbours still occupy their original attention slots
+and contribute zero. Every traversable cell is updated on every layer; this
+solver does not use a search frontier.
+
 ## Get the path
 
 `solve` returns a route from the start through every goal:

@@ -13,12 +13,29 @@ const SAMPLE_BATCHES: usize = 64;
 /// # Safety
 /// Requires AVX2. The caller limits cell count to the signed gather index range.
 #[target_feature(enable = "avx2")]
-pub(super) fn solve(block: &Block, maze: &Maze) -> Option<Vec<usize>> {
+pub(super) fn solve<const SKIP_WALLS: bool>(block: &Block, maze: &Maze) -> Option<Vec<usize>> {
     let pack = |v: [f32; LANES]| {
         // SAFETY: v contains eight readable floats.
         unsafe { _mm256_loadu_ps(v.as_ptr()) }
     };
-    let n = maze.cells().len();
+    let cells = maze.cells();
+    let (packed, original, n) = if SKIP_WALLS {
+        let n = cells.iter().filter(|&&cell| cell != Cell::Wall).count();
+        // Wall keys read the zero sentinel without removing or renumbering slots.
+        let mut packed = vec![n as i32; cells.len()];
+        let mut original = Vec::with_capacity(n);
+        for (id, &cell) in cells.iter().enumerate() {
+            if cell != Cell::Wall {
+                packed[id] = original.len() as i32;
+                original.push(id);
+            }
+        }
+        (packed, original, n)
+    } else {
+        (Vec::new(), Vec::new(), cells.len())
+    };
+    let packed_id = |id: usize| if SKIP_WALLS { packed[id] } else { id as i32 };
+    let original_id = |i: usize| if SKIP_WALLS { original[i] } else { i };
     let batches = n.div_ceil(LANES);
     let zero = _mm256_setzero_ps();
     let one = _mm256_set1_ps(1.0);
@@ -37,21 +54,23 @@ pub(super) fn solve(block: &Block, maze: &Maze) -> Option<Vec<usize>> {
     let mut distant_hits = 0;
     let mut last_offset = 0usize;
     let mut batch_layout = Vec::with_capacity(batches);
-    let mut open = Vec::with_capacity(batches);
+    let mut open = Vec::with_capacity(if SKIP_WALLS { 0 } else { batches });
     let mut goal = vec![[0.0; LANES]; batches];
-    for (b, cells) in maze.cells().chunks(LANES).enumerate() {
+    for (b, goals) in goal.iter_mut().enumerate() {
         let neighbours: [&[usize]; LANES] = array::from_fn(|l| {
-            if l < cells.len() {
-                maze.neighbours(b * LANES + l)
+            let i = b * LANES + l;
+            if i < n {
+                let id = original_id(i);
+                goals[l] = f32::from(cells[id] == Cell::Goal);
+                maze.neighbours(id)
             } else {
                 &[]
             }
         });
-        open.push(pack(array::from_fn(|l| {
-            f32::from(cells.get(l).is_some_and(|c| *c != Cell::Wall))
-        })));
-        for (l, cell) in cells.iter().enumerate() {
-            goal[b][l] = f32::from(*cell == Cell::Goal);
+        if !SKIP_WALLS {
+            open.push(pack(array::from_fn(|l| {
+                f32::from(cells.get(b * LANES + l).is_some_and(|c| *c != Cell::Wall))
+            })));
         }
         // Batches with the same lane degrees have identical attention weights.
         let degrees = neighbours.map(|row| row.len() as u8);
@@ -105,7 +124,7 @@ pub(super) fn solve(block: &Block, maze: &Maze) -> Option<Vec<usize>> {
         let start = keys.len();
         for k in 0..count {
             let indices: [i32; LANES] =
-                array::from_fn(|l| neighbours[l].get(k).copied().unwrap_or(n) as i32);
+                array::from_fn(|l| neighbours[l].get(k).copied().map_or(n as i32, packed_id));
             // SAFETY: the index array spans exactly one unaligned vector.
             keys.push(unsafe { _mm256_loadu_si256(indices.as_ptr().cast()) });
         }
@@ -115,8 +134,8 @@ pub(super) fn solve(block: &Block, maze: &Maze) -> Option<Vec<usize>> {
     let mut reached = vec![0.0; batches * LANES + 1];
     let mut next = reached.clone();
     let mut pointers = vec![[zero; MAX_DEGREE]; batches];
-    let mut at = maze.start();
-    let mut path = vec![at];
+    let mut at = packed_id(maze.start()) as usize;
+    let mut path = vec![maze.start()];
     for leg in 0..maze.goals().len() {
         if leg > 0 {
             goal[at / LANES][at % LANES] = 0.0;
@@ -128,7 +147,7 @@ pub(super) fn solve(block: &Block, maze: &Maze) -> Option<Vec<usize>> {
             for (b, (range, offset)) in batch_layout.iter().enumerate() {
                 let mut heads = [zero; MAX_DEGREE];
                 for (&indices, row) in keys[range.clone()].iter().zip(&weights[*offset..]) {
-                    // SAFETY: each index is a maze neighbour or n, both within reached.
+                    // SAFETY: indices are token IDs in 0..n or the sentinel n in reached.
                     let values = unsafe { _mm256_i32gather_ps::<4>(reached.as_ptr(), indices) };
                     for (head, &weight) in heads.iter_mut().zip(row) {
                         *head = _mm256_add_ps(*head, _mm256_mul_ps(values, weight));
@@ -137,7 +156,11 @@ pub(super) fn solve(block: &Block, maze: &Maze) -> Option<Vec<usize>> {
                 // SAFETY: both buffers contain LANES entries per batch, including padding.
                 let old = unsafe { _mm256_loadu_ps(reached.as_ptr().add(b * LANES)) };
                 let g = pack(goal[b]);
-                let gate = _mm256_sub_ps(open[b], one);
+                let gate = if SKIP_WALLS {
+                    zero
+                } else {
+                    _mm256_sub_ps(open[b], one)
+                };
                 let base = _mm256_mul_ps(ten, _mm256_sub_ps(_mm256_sub_ps(gate, g), old));
                 let mut prefix = zero;
                 for (ptr, head) in pointers[b].iter_mut().zip(heads) {
@@ -147,10 +170,15 @@ pub(super) fn solve(block: &Block, maze: &Maze) -> Option<Vec<usize>> {
                     prefix = _mm256_add_ps(prefix, scaled);
                 }
                 // Nonnegative scratch and old reached are cleared by their residual ReLUs.
-                let projection = _mm256_add_ps(
-                    _mm256_mul_ps(_mm256_set1_ps((10 * MAX_DEGREE) as f32), gate),
-                    _mm256_mul_ps(ten, g),
-                );
+                let goal_signal = _mm256_mul_ps(ten, g);
+                let projection = if SKIP_WALLS {
+                    goal_signal
+                } else {
+                    _mm256_add_ps(
+                        _mm256_mul_ps(_mm256_set1_ps((10 * MAX_DEGREE) as f32), gate),
+                        goal_signal,
+                    )
+                };
                 let new = step(_mm256_add_ps(projection, prefix));
                 changed = _mm256_or_ps(changed, _mm256_cmp_ps::<_CMP_NEQ_OQ>(old, new));
                 // SAFETY: this batch has eight writable entries, including any padding.
@@ -170,8 +198,9 @@ pub(super) fn solve(block: &Block, maze: &Maze) -> Option<Vec<usize>> {
                     & (1 << (at % LANES))
                     != 0
             })?;
-            at = maze.neighbours(at)[k];
-            path.push(at);
+            let id = maze.neighbours(original_id(at))[k];
+            at = packed_id(id) as usize;
+            path.push(id);
         }
     }
     Some(path)

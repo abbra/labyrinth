@@ -1,8 +1,9 @@
-use labyrinth::{Cell, MAX_DEGREE, Maze, Model, Solver, Transformer};
+use labyrinth::{Cell, MAX_DEGREE, Maze, Model, Solver, Transformer, WallSkippingTransformer};
 
 fn check(maze: &Maze, expected: Option<&[usize]>) {
     let route = Transformer::new().solve(maze);
     assert_eq!(route.as_deref(), expected);
+    assert_eq!(route, WallSkippingTransformer::new().solve(maze));
     assert_eq!(route, Model::new().solve(maze));
 }
 
@@ -46,6 +47,16 @@ fn eighth_neighbour_can_supply_the_pointer() {
     cells[MAX_DEGREE] = Cell::Goal;
     let maze = Maze::new(cells, (1..=MAX_DEGREE).map(|i| (0, i))).unwrap();
     check(&maze, Some(&[0, MAX_DEGREE]));
+}
+
+#[test]
+fn wall_slots_preserve_tie_order_and_original_route_ids() {
+    let maze = Maze::new(
+        vec![Cell::Wall, Cell::Goal, Cell::Start, Cell::Wall, Cell::Goal],
+        [(2, 0), (2, 4), (2, 3), (2, 1)],
+    )
+    .unwrap();
+    check(&maze, Some(&[2, 4, 2, 1]));
 }
 
 #[test]

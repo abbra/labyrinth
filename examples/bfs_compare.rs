@@ -11,7 +11,7 @@ use std::collections::{BinaryHeap, VecDeque};
 use std::hint::black_box;
 use std::time::Duration;
 
-use labyrinth::{Cell, Maze, Model, Solver, Transformer};
+use labyrinth::{Cell, Maze, Model, Solver, Transformer, WallSkippingTransformer};
 
 const SWEEP_SIDES: [usize; 5] = [64, 128, 256, 512, 1024];
 const SEEDS: [u64; 5] = [1, 2, 3, 4, 5];
@@ -86,6 +86,7 @@ fn square_board(side: usize) -> board::Board {
 
 fn transformer_sweep() {
     let transformer = Transformer::new();
+    let compact = WallSkippingTransformer::new();
     let model = Model::new();
     for side in [16, 32] {
         let mut cells =
@@ -106,22 +107,24 @@ fn transformer_sweep() {
                 nearest_goal_bfs
             };
             let expected = bfs(&maze).expect("benchmark maze is solvable");
-            let mut times: [Vec<Duration>; 3] = std::array::from_fn(|_| Vec::with_capacity(RUNS));
+            let mut times: [Vec<Duration>; 4] = std::array::from_fn(|_| Vec::with_capacity(RUNS));
             for run in 0..RUNS {
-                for offset in 0..3 {
-                    let solver = (run + offset) % 3;
+                for offset in 0..times.len() {
+                    let solver = (run + offset) % times.len();
                     let (elapsed, path) = match solver {
                         0 => timing::time_batch(|| transformer.solve(black_box(&maze))),
-                        1 => time_model(&model, &maze),
+                        1 => timing::time_batch(|| compact.solve(black_box(&maze))),
+                        2 => time_model(&model, &maze),
                         _ => timing::time_batch(|| bfs(black_box(&maze))),
                     };
                     assert_eq!(path, expected, "{name} side {side}, solver {solver}");
                     times[solver].push(elapsed);
                 }
             }
-            let [transformer, model, bfs] = times.map(|mut samples| median_us(&mut samples));
+            let [transformer, compact, model, bfs] =
+                times.map(|mut samples| median_us(&mut samples));
             println!(
-                "{name} {side}x{side} goals={} steps={} transformer_us={transformer:.3} model_us={model:.3} bfs_us={bfs:.3}",
+                "{name} {side}x{side} goals={} steps={} transformer_us={transformer:.3} wall_skipping_us={compact:.3} model_us={model:.3} bfs_us={bfs:.3}",
                 maze.goals().len(),
                 expected.len() - 1
             );

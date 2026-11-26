@@ -14,6 +14,18 @@ pub struct Transformer {
     block: Block,
 }
 
+/// Evaluates the same fixed weights as [`Transformer`], but only on non-wall cells.
+#[derive(Clone, Debug, Default)]
+pub struct WallSkippingTransformer(Transformer);
+
+impl WallSkippingTransformer {
+    /// Constructs the fixed weights, independent of the maze size and topology.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
 impl Transformer {
     /// Constructs the fixed weights, independent of the maze size and topology.
     #[must_use]
@@ -30,13 +42,17 @@ impl Default for Transformer {
     }
 }
 
-impl Solver for Transformer {
-    fn solve(&self, maze: &Maze) -> Option<Vec<usize>> {
+impl Transformer {
+    fn solve_maze<const SKIP_WALLS: bool>(&self, maze: &Maze) -> Option<Vec<usize>> {
         #[cfg(target_arch = "x86_64")]
         if std::is_x86_feature_detected!("avx2") && maze.cells().len() <= i32::MAX as usize {
             // SAFETY: AVX2 is present and even the sentinel fits a signed gather index.
-            return unsafe { cells::solve(&self.block, maze) };
+            return unsafe { cells::solve::<SKIP_WALLS>(&self.block, maze) };
         }
+        self.solve_portable::<SKIP_WALLS>(maze)
+    }
+
+    fn solve_portable<const SKIP_WALLS: bool>(&self, maze: &Maze) -> Option<Vec<usize>> {
         let mut tokens: Vec<_> = maze
             .cells()
             .iter()
@@ -48,7 +64,19 @@ impl Solver for Transformer {
                 token
             })
             .collect();
-        let mut next = Vec::with_capacity(tokens.len());
+        // Keep original IDs and neighbour slots; both buffers retain immutable wall tokens.
+        let traversable: Vec<_> = if SKIP_WALLS {
+            (0..maze.cells().len())
+                .filter(|&i| maze.cells()[i] != Cell::Wall)
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let mut next = if SKIP_WALLS {
+            tokens.clone()
+        } else {
+            Vec::with_capacity(tokens.len())
+        };
         let mut at = maze.start();
         let mut path = vec![at];
         for leg in 0..maze.goals().len() {
@@ -60,12 +88,21 @@ impl Solver for Transformer {
                 }
             }
             loop {
-                next.clear();
                 let mut changed = false;
-                for (i, old) in tokens.iter().enumerate() {
+                let mut evaluate = |i: usize, old: &Token| {
                     let new = self.block.forward(&tokens, maze.neighbours(i), i);
                     changed = changed || new != *old;
-                    next.push(new);
+                    new
+                };
+                if SKIP_WALLS {
+                    for &i in &traversable {
+                        next[i] = evaluate(i, &tokens[i]);
+                    }
+                } else {
+                    next.clear();
+                    for (i, old) in tokens.iter().enumerate() {
+                        next.push(evaluate(i, old));
+                    }
                 }
                 std::mem::swap(&mut tokens, &mut next);
                 if tokens[at][REACHED] > 0.5 {
@@ -84,5 +121,31 @@ impl Solver for Transformer {
             }
         }
         Some(path)
+    }
+}
+
+impl Solver for Transformer {
+    fn solve(&self, maze: &Maze) -> Option<Vec<usize>> {
+        self.solve_maze::<false>(maze)
+    }
+}
+
+impl Solver for WallSkippingTransformer {
+    fn solve(&self, maze: &Maze) -> Option<Vec<usize>> {
+        self.0.solve_maze::<true>(maze)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn portable_wall_skipping_keeps_original_ids_across_legs() {
+        let maze: Maze = "#G.S.G#".parse().unwrap();
+        let solver = Transformer::new();
+        let dense = solver.solve_portable::<false>(&maze);
+        assert_eq!(dense, solver.solve_portable::<true>(&maze));
+        assert!(dense.is_some());
     }
 }

@@ -44,24 +44,24 @@ without the counting allocator. Its nine-sample median speed-up is 18,066×;
 it reports `solve_ms=0.001` (rounded to 0.001 ms) and `queue_bfs_ms=22.961`.
 It validates each route outside the timed batch.
 
-### Full transformer versus optimized solve and queue BFS
+### Dense and wall-skipping transformers versus optimized solve and queue BFS
 
 Reproduce with `taskset -c 2 cargo run --release --example bfs_compare -- --transformer`.
 Times below are median microseconds per complete route over nine calibrated
 batches, rotating solver order. Each solver used the same maze. Timing excludes
-maze construction and `Transformer::new`, but includes per-solve packing.
+maze and solver construction, but includes per-solve packing.
 The returned path was checked for exact equality with queue BFS after each batch.
 Backtracker rows use seed 1;
 the four-goal baseline repeats BFS to the nearest unvisited goal.
 
-| Maze | Goals | Steps | `Transformer::solve` (µs) | `Model::solve` (µs) | Queue BFS (µs) |
-|------|------:|------:|--------------------------:|--------------------:|---------------:|
-| Open 16×16 | 1 | 30 | 21.700 | 0.029 | 1.201 |
-| Backtracker 16×16 | 1 | 48 | 32.404 | 0.500 | 0.466 |
-| Backtracker 16×16 | 4 | 68 | 47.550 | 0.848 | 1.155 |
-| Open 32×32 | 1 | 62 | 165.735 | 0.057 | 4.571 |
-| Backtracker 32×32 | 1 | 148 | 379.668 | 1.580 | 1.631 |
-| Backtracker 32×32 | 4 | 252 | 651.659 | 2.923 | 3.400 |
+| Maze | Goals | Steps | Dense transformer (µs) | Wall-skipping transformer (µs) | `Model::solve` (µs) | Queue BFS (µs) |
+|------|------:|------:|-----------------------:|-------------------------------:|--------------------:|---------------:|
+| Open 16×16 | 1 | 30 | 21.082 | 20.966 | 0.028 | 1.219 |
+| Backtracker 16×16 | 1 | 48 | 32.304 | 13.799 | 0.512 | 0.496 |
+| Backtracker 16×16 | 4 | 68 | 46.788 | 19.860 | 0.851 | 1.051 |
+| Open 32×32 | 1 | 62 | 166.426 | 164.387 | 0.057 | 4.592 |
+| Backtracker 32×32 | 1 | 148 | 381.987 | 169.827 | 1.567 | 1.598 |
+| Backtracker 32×32 | 4 | 252 | 660.672 | 287.412 | 2.965 | 3.382 |
 
 ### Large-board transformer scaling
 

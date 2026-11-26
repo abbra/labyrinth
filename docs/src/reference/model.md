@@ -191,6 +191,12 @@ zero from the sentinel. The eight heads read from one `REACHED` buffer while
 the next layer is written to another. Open flags, goal flags and pointers
 are stored separately.
 
+`WallSkippingTransformer::solve` uses the same block but never updates a
+wall: its `REACHED` value and pointers are zero on every layer. Its AVX2
+kernel packs eight traversable cells per vector (padding the last batch)
+and maps wall neighbours to the zero sentinel without changing any cell's
+degree or slot order. The returned path uses the original maze cell IDs.
+
 The packer builds this layout once for all loops and legs. Two batches with
 the same **ordered tuple of eight degrees** can share weight rows even if
 their neighbour IDs differ: the IDs determine *where* to read and the degrees
