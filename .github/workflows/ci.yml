@@ -227,6 +227,8 @@ jobs:
       - name: Install a rustup toolchain with the wasm32 target
         run: |
           rustup-init -y --profile minimal --default-toolchain stable
+          # GITHUB_PATH only applies to later steps; rustup is needed now.
+          export PATH="$HOME/.cargo/bin:$PATH"
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
           rustup target add wasm32-unknown-unknown
       - name: Install wasm-bindgen CLI from the release tarball
