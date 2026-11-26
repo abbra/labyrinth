@@ -1,0 +1,83 @@
+---
+# Build the documentation (docs/, an mdBook with Mermaid diagrams) and the
+# browser-only WASM demo (target/wasm-dist, assembled by the triggering CI
+# run's wasm-dist job) and publish both on GitHub Pages: the book at the site
+# root, the demo at demo/ (demo/server/src/index.html, demo/wasm-demo/,
+# demo/wasm/pkg/ — the page's ../../wasm/pkg import resolves inside demo/).
+#
+# Pages must be set to "GitHub Actions" as its source (repository
+# Settings → Pages → Build and deployment).
+name: Docs
+
+on:
+  workflow_run:
+    workflows: ['CI']
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+  actions: read  # download-artifact of the triggering run's wasm-dist artifact
+
+# One deployment at a time; a newer push supersedes a queued one, but a
+# deployment in progress finishes.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+env:
+  # The versions the book is written against (`mdbook build docs` locally).
+  MDBOOK_VERSION: 0.5.4
+  MDBOOK_MERMAID_VERSION: 0.17.1
+
+jobs:
+  build:
+    name: Build the book and the demo
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Restore mdbook binaries
+        id: tools
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/bin/mdbook
+            ~/.cargo/bin/mdbook-mermaid
+          key: mdbook-${{ env.MDBOOK_VERSION }}-mermaid-${{ env.MDBOOK_MERMAID_VERSION }}
+      - name: Install mdbook and mdbook-mermaid
+        if: steps.tools.outputs.cache-hit != 'true'
+        run: |
+          cargo install --locked "mdbook@$MDBOOK_VERSION"
+          cargo install --locked "mdbook-mermaid@$MDBOOK_MERMAID_VERSION"
+      - name: Build
+        run: mdbook build docs
+      # The browser-only demo, next to the user-guide page that describes it.
+      # The wasm-dist artifact is self-contained (index.html pages + wasm/pkg),
+      # so it is copied in as-is; the book links to it only when it is there.
+      - name: Copy in the browser-only demo
+        uses: actions/download-artifact@v8
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ github.event.workflow_run.id }}
+          name: labyrinth-wasm-dist
+          path: docs/book/demo
+
+      - name: Upload the site
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: docs/book
+
+  deploy:
+    name: Publish to GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4

@@ -3,6 +3,7 @@
 Open the server address in a browser for the server-backed UI, or open
 `/wasm-demo/` from a local HTTP server after [building the WASM module](../getting-started/installation.md#build-the-browser-only-demo).
 The browser-only variant uses the same UI but generates and solves mazes locally.
+The published documentation serves it at [demo/wasm-demo/](../demo/wasm-demo/).
 
 ## Make a maze
 

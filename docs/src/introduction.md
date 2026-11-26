@@ -28,7 +28,8 @@ across mazes. Both `Model` and `Transformer` implement `Solver`.
 | **labyrinth-wasm** | Browser bindings. Local generation and solving for the WASM demo |
 
 The library has no dependencies. The server uses tokio, axum and serde. The
-WASM bindings use wasm-bindgen and serde.
+WASM bindings use wasm-bindgen and serde. The published site runs the
+browser-only demo at [demo/wasm-demo/](demo/wasm-demo/).
 
 ## Design goals
 
