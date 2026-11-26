@@ -184,6 +184,17 @@
 
     <div class="card">
       <h2>Solve</h2>
+      <label>Solver
+        <select id="solver">
+          <option value="model" selected>Model · fixed-weight transformer</option>
+          <option value="bfs">Queue BFS · classical reference</option>
+          <option value="bidirectional_bfs">Bidirectional BFS · two search fronts</option>
+          <option value="a_star">A* · square boards only</option>
+          <option value="transformer">Dense transformer · weighted graph</option>
+          <option value="wall_skipping">Wall-skipping transformer · sparse weights</option>
+          <option value="gh_scan_base">Gholami–Hajiaghayi · label-scan base case</option>
+        </select>
+      </label>
       <button class="primary" id="solve">Run solver</button>
       <div style="height:10px"></div>
       <label class="check"><input type="checkbox" id="show-flood" checked> Show goal flood-fill</label>
@@ -220,7 +231,7 @@
       </div>
     </div>
     <div class="card">
-      <h2>Model run</h2>
+      <h2>Solver run</h2>
       <div class="stats">
         <div class="stat"><div class="k">Result</div><div class="v" id="r-result">–</div></div>
         <div class="stat"><div class="k">Path length</div><div class="v" id="r-path">–</div></div>
@@ -269,9 +280,12 @@ const fmtBytes = b => b < 1024 ? `${b} B` : b < 1 << 20 ? `${(b / 1024).toFixed(
 async function api(path, body) {
   if (wasmBackend) {
     await wasmReady;
-    if (path === "/api/model") return { parameters: wasm.parameter_count(), max_side: 321 };
-    if (path === "/api/generate") return JSON.parse(wasm.generate_maze(body.shape, body.algorithm, body.width, body.height, BigInt(body.seed)));
-    if (path === "/api/solve") return JSON.parse(wasm.solve_maze(body.shape, body.width, body.height, body.cells));
+    // wasm-bindgen rethrows Err values as raw strings, not Error objects
+    try {
+      if (path === "/api/model") return { parameters: wasm.parameter_count(), max_side: 321 };
+      if (path === "/api/generate") return JSON.parse(wasm.generate_maze(body.shape, body.algorithm, body.width, body.height, BigInt(body.seed)));
+      if (path === "/api/solve") return JSON.parse(wasm.solve_maze(body.shape, body.width, body.height, body.cells, body.solver));
+    } catch (e) { throw new Error(e.message ?? String(e)); }
   }
   const res = await fetch(path, body === undefined ? {} : {
     method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
@@ -427,12 +441,13 @@ function runStats(res) {
   $("r-result").textContent = solved ? "Solved" : "No path";
   $("r-result").style.color = solved ? "var(--start)" : "var(--goal)";
   $("r-path").textContent = solved ? fmt(res.path.length - 1) + " steps" : "–";
-  $("r-loops").textContent = fmt(res.loops);
+  const model = $("solver").value === "model";
+  $("r-loops").textContent = res.loops ? fmt(res.loops) : "–";
   $("r-time").textContent = fmtTime(res.micros);
-  $("r-tokens").textContent = fmt(res.tokens);
-  $("r-params").textContent = fmt(params);
-  $("r-passes").textContent = fmt(res.token_passes);
-  $("r-perloop").textContent = fmtTime(Math.round(res.micros / Math.max(1, res.loops)));
+  $("r-tokens").textContent = model ? fmt(res.tokens) : "–";
+  $("r-params").textContent = model ? fmt(params) : "–";
+  $("r-passes").textContent = model ? fmt(res.token_passes) : "–";
+  $("r-perloop").textContent = res.loops ? fmtTime(Math.round(res.micros / res.loops)) : "–";
   if (res.heap) {
     $("r-allocs").textContent = fmt(res.heap.allocs);
     $("r-bytes").textContent = fmtBytes(res.heap.bytes);
@@ -479,11 +494,13 @@ async function solve() {
   if (!cells.length) return;
   showError("");
   const btn = $("solve"); btn.disabled = true;
-  setStatus("Solver flooding outward from all goals…", "busy");
+  const solver = $("solver").value;
+  setStatus(`Running ${solver}…`, "busy");
   try {
-    const res = await api("/api/solve", { shape, width: W, height: H, cells: cells.join("") });
+    const res = await api("/api/solve", { shape, width: W, height: H, cells: cells.join(""), solver });
     solution = res; runStats(res);
-    setStatus(res.path ? `Path found after ${fmt(res.loops)} loops.` : "At least one goal is unreachable from start.", res.path ? "ok" : "bad");
+    const unit = solver === "model" ? "loops" : "waves";
+    setStatus(res.path ? (res.loops ? `Path found after ${fmt(res.loops)} ${unit}.` : "Path found.") : "At least one goal is unreachable from start.", res.path ? "ok" : "bad");
     await animate();
   } catch (e) { showError(e.message); }
   btn.disabled = false;
@@ -555,6 +572,7 @@ $("dice").onclick = () => { $("seed").value = Math.floor(Math.random() * 1e9); g
 $("generate").onclick = generate;
 $("download").onclick = downloadMaze;
 $("solve").onclick = solve;
+$("solver").onchange = clearRun;
 $("show-flood").onchange = draw;
 addEventListener("resize", draw);
 
