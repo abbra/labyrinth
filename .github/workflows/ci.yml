@@ -1,0 +1,292 @@
+---
+# Adapted from kuipa's .github/workflows/ci.yml.  Every job runs a job of
+# scripts/local-ci.sh, so CI and local runs stay identical.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# No job writes to the repository: artifacts and caches use the runtime
+# token, not this one.
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  # System packages required to build the workspace and to run JavaScript-based
+  # GitHub Actions (actions/checkout, actions/cache) inside the container.
+  #   tar, gzip               — archive tools needed by actions/checkout and actions/cache
+  #   gcc, make               — C toolchain for build scripts
+  #   git-core                — actions/checkout
+  #   nodejs, npm, node       — required by actions/checkout and actions/cache
+  #   cargo, rust, rustfmt, cargo-clippy — Rust toolchain (not bundled in the base image)
+  DNF_PACKAGES: >-
+    tar gzip gcc make git-core nodejs /usr/bin/npm /usr/bin/node
+    cargo rust rustfmt cargo-clippy
+
+jobs:
+  # ── Build ──────────────────────────────────────────────────────────────────
+  # Compiles the full workspace (release) once and saves the artifacts to
+  # cache; downstream jobs restore them instead of recompiling.
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    container: quay.io/fedora/fedora:45
+    steps:
+      - name: Install native dependencies
+        run: dnf install -y $DNF_PACKAGES
+      - uses: actions/checkout@v7
+      - name: Restore cargo registry cache
+        uses: actions/cache@v6
+        with:
+          path: ~/.cargo/registry
+          key: cargo-registry-v1-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: cargo-registry-v1-
+      - name: Restore cargo git cache
+        uses: actions/cache@v6
+        with:
+          path: ~/.cargo/git
+          key: cargo-git-v1-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: cargo-git-v1-
+      - name: Restore release build artifacts
+        uses: actions/cache@v6
+        with:
+          path: |
+            target/release/.fingerprint
+            target/release/deps
+            target/release/build
+            target/release/examples
+          key: cargo-target-release-v1-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: cargo-target-release-v1-
+      - name: Build workspace
+        run: ./scripts/local-ci.sh --no-deps build
+
+  # ── Format ─────────────────────────────────────────────────────────────────
+  # Runs in parallel with build — rustfmt needs no compiled artifacts.
+  fmt:
+    name: Rustfmt
+    runs-on: ubuntu-latest
+    container: quay.io/fedora/fedora:45
+    steps:
+      - name: Install native dependencies
+        run: dnf install -y $DNF_PACKAGES
+      - uses: actions/checkout@v7
+      - name: Check formatting
+        run: ./scripts/local-ci.sh --no-deps fmt
+
+  # ── Clippy ─────────────────────────────────────────────────────────────────
+  # The workspace gate: cargo clippy --workspace --all-targets -- -D warnings.
+  clippy:
+    name: Clippy
+    needs: [build]
+    runs-on: ubuntu-latest
+    container: quay.io/fedora/fedora:45
+    steps:
+      - name: Install native dependencies
+        run: dnf install -y $DNF_PACKAGES
+      - uses: actions/checkout@v7
+      - name: Restore cargo registry cache
+        uses: actions/cache@v6
+        with:
+          path: ~/.cargo/registry
+          key: cargo-registry-v1-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: cargo-registry-v1-
+      - name: Restore release build artifacts
+        uses: actions/cache@v6
+        with:
+          path: |
+            target/release/.fingerprint
+            target/release/deps
+            target/release/build
+            target/release/examples
+          key: cargo-target-release-v1-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: cargo-target-release-v1-
+      - name: Run clippy
+        run: ./scripts/local-ci.sh --no-deps clippy
+
+  # ── Documentation ──────────────────────────────────────────────────────────
+  # Builds the mdBook and runs its doctests against the release library.
+  doc:
+    name: Documentation
+    needs: [build]
+    runs-on: ubuntu-latest
+    container: quay.io/fedora/fedora:45
+    steps:
+      - name: Install native dependencies
+        run: dnf install -y $DNF_PACKAGES
+      - uses: actions/checkout@v7
+      - name: Restore cargo registry cache
+        uses: actions/cache@v6
+        with:
+          path: ~/.cargo/registry
+          key: cargo-registry-v1-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: cargo-registry-v1-
+      - name: Restore release build artifacts
+        uses: actions/cache@v6
+        with:
+          path: |
+            target/release/.fingerprint
+            target/release/deps
+            target/release/build
+            target/release/examples
+          key: cargo-target-release-v1-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: cargo-target-release-v1-
+      - name: Restore mdbook binaries
+        id: tools
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/bin/mdbook
+            ~/.cargo/bin/mdbook-mermaid
+          key: mdbook-0.5.4-mermaid-0.17.1
+      - name: Install mdbook and mdbook-mermaid
+        if: steps.tools.outputs.cache-hit != 'true'
+        run: |
+          cargo install --locked mdbook@0.5.4
+          cargo install --locked mdbook-mermaid@0.17.1
+      - name: Build the book and run its doctests
+        run: ./scripts/local-ci.sh --no-deps doc
+
+  # ── Test suite ─────────────────────────────────────────────────────────────
+  # Unit and integration tests across the workspace.
+  test:
+    name: Test Suite
+    needs: [build]
+    runs-on: ubuntu-latest
+    container: quay.io/fedora/fedora:45
+    steps:
+      - name: Install native dependencies
+        run: dnf install -y $DNF_PACKAGES
+      - uses: actions/checkout@v7
+      - name: Restore cargo registry cache
+        uses: actions/cache@v6
+        with:
+          path: ~/.cargo/registry
+          key: cargo-registry-v1-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: cargo-registry-v1-
+      - name: Restore release build artifacts
+        uses: actions/cache@v6
+        with:
+          path: |
+            target/release/.fingerprint
+            target/release/deps
+            target/release/build
+            target/release/examples
+          key: cargo-target-release-v1-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: cargo-target-release-v1-
+      - name: Run tests
+        run: ./scripts/local-ci.sh --no-deps test
+
+  # ── Examples ───────────────────────────────────────────────────────────────
+  # Runs the solve and bench examples on a fixed small maze.
+  examples:
+    name: Examples
+    needs: [build]
+    runs-on: ubuntu-latest
+    container: quay.io/fedora/fedora:45
+    steps:
+      - name: Install native dependencies
+        run: dnf install -y $DNF_PACKAGES
+      - uses: actions/checkout@v7
+      - name: Restore cargo registry cache
+        uses: actions/cache@v6
+        with:
+          path: ~/.cargo/registry
+          key: cargo-registry-v1-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: cargo-registry-v1-
+      - name: Restore release build artifacts
+        uses: actions/cache@v6
+        with:
+          path: |
+            target/release/.fingerprint
+            target/release/deps
+            target/release/build
+            target/release/examples
+          key: cargo-target-release-v1-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: cargo-target-release-v1-
+      - name: Run the examples
+        run: ./scripts/local-ci.sh --no-deps examples
+
+  # ── WASM ───────────────────────────────────────────────────────────────────
+  # Cross-compiles labyrinth-wasm to wasm32-unknown-unknown and binds it with
+  # wasm-bindgen into wasm/pkg/.  The CLI must match the pinned crate version.
+  wasm:
+    name: WASM build
+    needs: [build]
+    runs-on: ubuntu-latest
+    container: quay.io/fedora/fedora:45
+    env:
+      BINDGEN_VERSION: 0.2.129
+    steps:
+      - name: Install native dependencies and rustup
+        run: dnf install -y $DNF_PACKAGES rustup
+      - uses: actions/checkout@v7
+      - name: Install a rustup toolchain with the wasm32 target
+        run: |
+          rustup-init -y --profile minimal --default-toolchain stable
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          rustup target add wasm32-unknown-unknown
+      - name: Install wasm-bindgen CLI from the release tarball
+        run: |
+          url="https://github.com/rustwasm/wasm-bindgen/releases/download/$BINDGEN_VERSION/wasm-bindgen-$BINDGEN_VERSION-x86_64-unknown-linux-musl.tar.gz"
+          curl -sSfL "$url" | tar -xz --strip-components=1 -C "$HOME/.cargo/bin" "wasm-bindgen-$BINDGEN_VERSION-x86_64-unknown-linux-musl/wasm-bindgen"
+          wasm-bindgen --version
+      - name: Restore cargo registry cache
+        uses: actions/cache@v6
+        with:
+          path: ~/.cargo/registry
+          key: cargo-registry-v1-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: cargo-registry-v1-
+      - name: Restore cargo git cache
+        uses: actions/cache@v6
+        with:
+          path: ~/.cargo/git
+          key: cargo-git-v1-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: cargo-git-v1-
+      - name: Restore wasm32 build artifacts
+        uses: actions/cache@v6
+        with:
+          path: |
+            target/wasm32-unknown-unknown/release/.fingerprint
+            target/wasm32-unknown-unknown/release/deps
+            target/wasm32-unknown-unknown/release/build
+          key: cargo-target-wasm32-release-v1-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: cargo-target-wasm32-release-v1-
+      - name: Build the wasm package
+        run: ./scripts/local-ci.sh --no-deps wasm
+      - name: Upload the wasm package
+        uses: actions/upload-artifact@v7
+        with:
+          name: labyrinth-wasm-pkg
+          path: wasm/pkg
+          if-no-files-found: error
+
+  # ── WASM distribution ──────────────────────────────────────────────────────
+  # Assembles the copyable browser-only distribution (UI page, wasm-demo
+  # wrapper, wasm/pkg).  Consumes the wasm job's package artifact, so the
+  # workflow is also the source of the demo published by the Docs workflow.
+  wasm-dist:
+    name: WASM distribution
+    needs: [wasm]
+    runs-on: ubuntu-latest
+    container: quay.io/fedora/fedora:45
+    steps:
+      - name: Install native dependencies
+        run: dnf install -y $DNF_PACKAGES
+      - uses: actions/checkout@v7
+      - name: Download the wasm package
+        uses: actions/download-artifact@v8
+        with:
+          name: labyrinth-wasm-pkg
+          path: wasm/pkg
+      - name: Assemble the browser-only distribution
+        run: ./scripts/local-ci.sh --no-deps wasm-dist
+      - name: Upload the distribution
+        uses: actions/upload-artifact@v7
+        with:
+          name: labyrinth-wasm-dist
+          path: target/wasm-dist
+          if-no-files-found: error
