@@ -1,37 +1,56 @@
 # How the Model Works
 
-`Model::trace` applies fixed BFS rules directly to cells and records the
-search progress. It does not construct or execute transformer weights. Each
-cell's runtime state is one byte: `0` means unreached, `1`–`8` identify the
-neighbour that first reached it, and `9` marks a goal. The trace floods
-outward from all goals, updates only dirty cells, then builds a route from the
-start through every goal.
+## Which route is returned?
 
-`Model::solve` returns the same route without producing trace data. It has
-two strategies:
+A route is a list of cell IDs, starting at `S`. Each leg takes a shortest
+path through non-wall cells to the nearest unvisited goal, measured in edges.
+If several moves can begin such a path, take the first in the current cell's
+neighbour list (`Maze::new` preserves input edge order). This breaks ties
+between goals as well as between paths to one goal. The next leg starts at the
+goal just visited; it may cross earlier parts of the route. This greedy rule
+does **not** promise the shortest tour of all goals. If any goal is unreachable,
+the result is `None`, not a partial route.
 
-- **Open square.** A single-goal, fully open square grid gets a
-  Manhattan-shortest route built directly, using cached neighbour-order
-  preferences to resolve ties.
-- **Waves.** Otherwise, waves grow from the start and from every goal until
-  they meet; see [Single-goal search](#single-goal-search). The route runs to
-  the goal that was reached. With several goals, `solve` then runs one queue
-  BFS leg to the nearest unvisited goal at a time, as `trace` does.
+`Model::trace`, `Model::solve`, and `Transformer::solve` produce the same
+route. They differ in how they find it and what work they record.
 
-`Transformer` evaluates the 1,472-parameter block described below without storing
-its matrices densely. Construction precomputes the structural softmax weights;
-the forward pass accumulates all eight heads together and shares projections
-between paired ReLUs and prefix sums between pointer units. Its `Solver`
-implementation evaluates the block on every cell in every iteration, without
-the open-square or wave shortcuts. For each subsequent leg, it re-embeds the
-maze with only the unvisited goals flagged. `Model::parameter_count()` reports
-the same count without constructing those weights.
+## Tracing the first leg
 
-## Single-goal search
+`Model::trace` runs a breadth-first search (BFS) from **all goals at once**.
+It uses one state byte per cell, not transformer weights: `0` is unreached,
+`1`–`8` point to neighbour slots `0`–`7`, and `9` marks a reached goal.
+The first loop evaluates every cell and marks the goals. In each later loop
+an unreached open cell takes the lowest slot pointing to a previously reached
+neighbour. Updates take effect together, so the flood advances one edge per
+loop. Only changed cells and their neighbours are scheduled for the next loop.
 
-`Model::solve` grows whole BFS waves from the goal and from the start. Each
-step widens whichever frontier is smaller; on a tie it widens the start side.
-The search returns no route when either frontier runs empty.
+The flood stops once it reaches `S` or a loop makes no changes. `loops` counts
+these iterations, `token_passes` counts cell evaluations, and `reached_at`
+records the first loop in which each cell changed. A goal has `Some(1)`;
+`None` can mean the flood stopped before reaching that cell, not just that the
+cell was unreachable.
+
+Following the pointers from `S` gives the first leg. For each later leg both
+`Model` methods use an ordinary queue BFS *from the last goal*, exploring
+neighbours in slot order and stopping at the first unvisited goal dequeued.
+`Trace::path` includes those legs when successful; the three trace statistics
+describe only the initial flood.
+
+## Optimized solve
+
+`Model::solve` skips trace collection. With one goal on a fully open,
+row-major square grid, it constructs the Manhattan-shortest path directly.
+`Maze` has already checked the grid edges and cached each cell's vertical vs.
+horizontal preference, so ties match the neighbour order. Every other maze
+uses the wave search below for its first leg, even when it has several goals.
+
+<a id="single-goal-search"></a>
+
+### Bidirectional search for the first leg
+
+The general first-leg search grows a frontier from the start and another
+from **all** goals. Each step widens the smaller frontier; on a tie it widens
+the start side. If either frontier runs empty before contact, no route exists.
 
 - **Goal side.** Each newly reached cell stores the same pointer `trace`
   would give it: the lowest neighbour slot that the previous goal wave
@@ -39,21 +58,19 @@ The search returns no route when either frontier runs empty.
   pointing at another cell of the same wave.
 - **Start side.** Each cell stores a flag, its depth from the start modulo 3,
   and a tie bit. The tie bit is set when a second cell of the previous wave
-  also reaches it. The search also keeps every start-side cell in wave order,
-  with each cell's parent recorded as an index into that list. Both lists are
-  reserved for every cell up front, 12 bytes per cell.
+  also reaches it. Start-side cells are kept in wave order with an index
+  pointing back to the parent that first reached each one.
 
 The search stops as soon as one side touches the other. The meeting cells are
 the cells of the last start-side wave that touch a settled goal-side cell.
 
-`trace` follows, from every cell, the lowest neighbour slot one step nearer
-the goal. To return that same route, `solve` rebuilds the start-side part in
+On the first leg, `trace` follows the lowest neighbour slot one step nearer
+to a goal. To return that same route, `solve` rebuilds the start-side part in
 one of two ways:
 
 1. **Parent chain.** This applies when there is exactly one meeting cell and
    no cell on its parent chain carries the tie bit. Then only one shortest
-   route reaches the meeting cell, and `solve` reads it back with one load per
-   step.
+   route reaches the meeting cell, and `solve` follows the recorded parents.
 2. **Marked walk.** Otherwise, `solve` walks back from the meeting cells one
    depth at a time. At each step it marks as on route every neighbour that
    carries the depth tag one level nearer the start. It then walks forward
@@ -61,16 +78,16 @@ one of two ways:
    and one level deeper.
 
 From the last start-side cell, the route steps to its lowest-slot goal-side
-neighbour and follows the goal-side pointers to the goal. On backtracker
-mazes this is several times faster than flooding from the goal alone; see
-[Performance Results](performance.md#comparing-solve-algorithms).
+neighbour and follows the goal-side pointers to a goal.
 
 ## Equivalent transformer
 
-One block (attention and MLP) runs again and again on the same tokens. Its
-fixed weights implement BFS from all goals.
+`Transformer` is a separate `Solver` implementation that evaluates a fixed
+floating-point attention and ReLU block. Each iteration runs the block on
+**every** cell. Each leg is a new flood from the still-unvisited goals,
+without `Model`'s direct path, bidirectional waves, or queue BFS.
 
-## Tokens
+### Tokens
 
 In the equivalent transformer, each cell is a token. A token is a vector of
 20 values. This vector is the residual stream.
@@ -79,29 +96,32 @@ In the equivalent transformer, each cell is a token. A token is a vector of
 |-------|------|---------|
 | 0 | `ONE` | Always 1. It acts as a bias input |
 | 1 | `OPEN` | 1 if the cell is not a wall |
-| 2 | `GOAL` | 1 if the cell is a goal |
+| 2 | `GOAL` | 1 if the cell is a goal still to visit |
 | 3 | `REACHED` | 1 if the search has reached the cell |
-| 4–11 | `PTR[k]` | 1 if neighbour `k` reached this cell first |
-| 12–19 | `NBR_REACHED[k]` | Scratch. Attention writes neighbour `k`'s `REACHED` here |
+| 4–11 | `PTR[k]` | 1 if slot `k` was selected when this cell was first reached |
+| 12–19 | `NBR_REACHED[k]` | Scratch for head `k`'s weighted neighbour read |
 
 The embedding sets `ONE`, `OPEN` and `GOAL`. All other values start at 0.
 
-## Equivalent transformer loop
+### Equivalent transformer loop
 
 ```mermaid
 flowchart LR
-    E[Embed cells] --> B[Block: attention + MLP]
-    B --> C{Start reached<br/>or no change?}
-    C -- no --> B
-    C -- yes --> R[Read path from PTR]
+    E[Embed cells for this leg] --> B[Block: attention + MLP]
+    B --> C{Leg start reached?}
+    C -- yes --> R[Follow PTR to a goal]
+    C -- no --> F{Flood grew?}
+    F -- yes --> B
+    F -- no --> N[Return None]
 ```
 
-1. The block runs on all tokens.
-2. If the start has `REACHED = 1`, stop.
-3. If no token changed, stop. The start is unreachable from every goal.
-4. Else, go to step 1.
+The start of a leg is `S` or the last goal visited. Once reached, follow its
+pointers to the next goal: each pointer goes one BFS layer nearer. Append the
+cells traversed without repeating the join. Before the next leg, clear the
+visited goal's `GOAL` flag and reset the dynamic state. The neighbour graph
+and the weights stay the same.
 
-## Equivalent attention
+### Equivalent attention
 
 The model has 8 heads. Head `k` reads neighbour slot `k` of each cell.
 
@@ -115,15 +135,19 @@ the key in the neighbour list of the query:
 | Neighbour in another slot | −50 |
 | Any other token | −∞ |
 
-The sink is an extra token with all values 0. A head writes the
-softmax-weighted sum of its keys' `REACHED` values into `NBR_REACHED[k]`.
-With no neighbour in slot `k`, the sink gets the largest weight. The
-other keys can still contribute a small nonzero value, but the 25-point
-bias gap keeps that leakage below the MLP's decision threshold.
+The sink has zero value. A head writes the softmax-weighted sum of its keys'
+`REACHED` values into `NBR_REACHED[k]`. With no neighbour in slot `k`, the
+sink gets the largest weight. The other keys can contribute a small nonzero
+value, but the 25-point gap keeps that leakage below the MLP threshold.
+Since the scores depend only on the cell's degree, key slot and head,
+`Transformer::new` precomputes their normalized weights once. The sink is
+included in the denominator; it needs no separate multiply in the forward pass.
 
-## Equivalent MLP
+### Equivalent MLP
 
-The MLP has 27 ReLU units. Each rule is a step function over 0/1 inputs.
+Of the MLP's 27 ReLU units, 18 implement nine threshold tests (one for
+`REACHED`, eight for the pointers). The other nine clear the old reached
+value and the eight scratch values.
 Two ReLU units make one step: `step(z) = relu(10(z−½)+½) − relu(10(z−½)−½)`.
 The result is exactly 0 for `z ≤ 0.45` and exactly 1 for `z ≥ 0.55`.
 
@@ -135,24 +159,17 @@ The rules:
    - the cell is open,
    - the cell is not a goal,
    - the cell was not reached before this loop,
-   - `NBR_REACHED[d]` is 1,
-   - `NBR_REACHED[e]` is 0 for each `e < d`.
+   - `NBR_REACHED[d]` indicates a reached neighbour,
+   - no earlier slot `e < d` indicates one.
 
-   Thus the first reached neighbour wins.
-3. **Clear.** The MLP subtracts the old `REACHED` and all `NBR_REACHED`
-   values. The rules above write the new values.
+   Thus the lowest eligible slot wins. Its pointer persists in later loops.
+   The numerical block shares a projection between each pair of ReLUs and
+   uses a running sum of earlier heads for the pointer tests.
+3. **Clear.** The MLP subtracts the old `REACHED` and the attention scratch
+   from the residual stream. Only the new `REACHED` and the pointers carry
+   search progress into the next loop.
 
-## Equivalent path readout
-
-A cell gets its pointer in the loop in which the search first reaches it.
-The pointer goes to a neighbour that the search reached one loop before.
-Thus each pointer goes one BFS layer nearer to a goal.
-
-The trace starts at the start cell, follows the pointer chain to the nearest
-goal, then joins shortest paths to the remaining goals in nearest-unvisited
-order. It returns no route if any goal is unreachable.
-
-## Equivalent parameter count
+### Equivalent parameter count
 
 | Part | Count | Calculation |
 |------|-------|-------------|
@@ -160,10 +177,43 @@ order. It returns no route if any goal is unreachable.
 | MLP | 1,080 | 27 units × (20 input weights + 20 output weights) |
 | **Total** | **1,472** | |
 
-## Skipped work
+This counts the equivalent dense projections, including fixed zero weights,
+not the number of floats stored at runtime. `Model::parameter_count()`
+computes the count without constructing a `Transformer`.
 
-The output of a token depends only on the token and its neighbours. If
-none of them changed in the last loop, the output is the same. Thus
-`Model::trace` evaluates only tokens near a change. This does not change the
-result. It changes the time for each loop from the size of the maze to the
-size of the search front.
+### Numerical execution layouts
+
+`Transformer::solve` selects its layout once per solve. On x86-64 with AVX2
+and at most `i32::MAX` cells (so the gather indices, including the sentinel,
+fit), each vector lane represents one of eight consecutive cells. A batch
+packs neighbour indices up to its highest degree; missing slots gather a
+zero from the sentinel. The eight heads read from one `REACHED` buffer while
+the next layer is written to another. Open flags, goal flags and pointers
+are stored separately.
+
+The packer builds this layout once for all loops and legs. Two batches with
+the same **ordered tuple of eight degrees** can share weight rows even if
+their neighbour IDs differ: the IDs determine *where* to read and the degrees
+determine *how much* each head weights the result. Reuse saves space, but a
+layer that jumps between distant rows can be slower than a sequential scan.
+Two checks balance these costs during packing:
+
+- After the packed table grows past 8 MiB and at each further 64 KiB growth
+  window, keep the pattern lookup if hits within 64 KiB of the write position
+  saved at least half a window's worth of rows. Otherwise clear the lookup.
+- Above 8 MiB, count reuse hits that jump more than 64 KiB from the preceding
+  batch's offset. If more than 32 such hits occur in a 64-batch sample, clear
+  the lookup and begin a fresh 64 KiB growth window. This catches scattered
+  reads even when reuse has stopped the table from growing.
+
+Clearing the lookup affects **future** batches only: they can append new rows
+nearby. Rows already referenced by packed batches remain valid. These are
+layout choices, not changes to the weights or the search rules.
+
+On other targets, without AVX2, or beyond the signed index limit, the
+portable kernel keeps two buffers of 20-float tokens. For each cell it reads
+its actual neighbours, accumulates all eight heads using the precomputed
+weights, and writes the updated token into the other buffer. Both layouts
+evaluate the same block and use the same pointer readout.
+
+See [Performance Results](performance.md) for measured solve times.
