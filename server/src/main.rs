@@ -12,8 +12,8 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use axum::Router;
-use axum::extract::{Json, State};
-use axum::http::StatusCode;
+use axum::extract::{Json, Path, State};
+use axum::http::{StatusCode, header};
 use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{get, post};
 use board::{Board, Shape};
@@ -41,6 +41,7 @@ async fn main() -> std::io::Result<()> {
     let addr = std::env::var("LABYRINTH_ADDR").unwrap_or_else(|_| "127.0.0.1:3000".into());
     let app = Router::new()
         .route("/", get(|| async { Html(include_str!("index.html")) }))
+        .route("/wasm/pkg/{file}", get(serve_pkg))
         .route("/api/model", get(model_info))
         .route("/api/generate", post(generate))
         .route("/api/solve", post(solve))
@@ -51,6 +52,20 @@ async fn main() -> std::io::Result<()> {
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     println!("listening on http://{}", listener.local_addr()?);
     axum::serve(listener, app).await
+}
+
+/// Allowlisted wasm-bindgen bundle files for the `?backend=wasm` UI, read from
+/// the workspace so the built pkg stays the single source of truth.
+async fn serve_pkg(Path(file): Path<String>) -> Result<Response, StatusCode> {
+    let mime = match file.as_str() {
+        "labyrinth_wasm.js" => "application/javascript",
+        "labyrinth_wasm_bg.wasm" => "application/wasm",
+        _ => return Err(StatusCode::NOT_FOUND),
+    };
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../wasm/pkg/",);
+
+    let body = std::fs::read(format!("{path}{file}")).map_err(|_| StatusCode::NOT_FOUND)?;
+    Ok(([(header::CONTENT_TYPE, mime)], body).into_response())
 }
 
 /// A request the client got wrong; rendered as `400` with the message as body.
